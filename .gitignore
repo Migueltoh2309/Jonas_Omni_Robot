@@ -1,0 +1,23 @@
+# --- Firmware ESP-IDF ---
+firmware/jonas_firmware/build/
+firmware/jonas_firmware/managed_components/
+firmware/jonas_firmware/sdkconfig
+firmware/jonas_firmware/sdkconfig.old
+firmware/jonas_firmware/sdkconfig.defaults.local
+
+# --- Datos de pruebas ---
+*.csv
+step_*.log
+
+# --- ROS 2 (workspaces futuros) ---
+build/
+install/
+log/
+
+# --- Python / editores / SO ---
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+*.swp
+.DS_Store

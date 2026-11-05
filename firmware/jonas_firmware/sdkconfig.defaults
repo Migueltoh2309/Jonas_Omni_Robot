@@ -1,0 +1,20 @@
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=3000
+CONFIG_ESP_TASK_WDT=n
+
+# micro-ROS: XRCE-DDS sobre UART0 (puerto "UART" de la DevKitC, chip CH343 -> /dev/ttyACM0)
+CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE=y
+CONFIG_MICRO_ROS_ESP_UART_TRANSPORT=y
+
+# Los logs (ESP_LOG/printf) van al USB nativo (USB-Serial-JTAG, puerto "USB"),
+# para que no ensucien el stream de micro-ROS en UART0.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# Tick de 1 ms: timeouts de micro-ROS y lazo de control precisos
+CONFIG_FREERTOS_HZ=1000
+
+# Dominio ROS del robot (la Raspi usa ROS_DOMAIN_ID=7). Para probar con la laptop Humble: 0
+CONFIG_JONAS_ROS_DOMAIN_ID=7

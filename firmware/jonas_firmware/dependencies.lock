@@ -1,0 +1,34 @@
+dependencies:
+  idf:
+    source:
+      type: idf
+    version: 5.5.0
+  micro-ros/micro_ros_espidf_component:
+    dependencies:
+    - name: idf
+      version: '>=5.2'
+    - name: espressif/esp_wifi_remote
+      rules:
+      - if: target in [esp32p4]
+      version: '>=0.10,<2.0'
+    - name: espressif/esp_hosted
+      rules:
+      - if: target in [esp32p4]
+      version: ~2
+    source:
+      path: /home/mito/jonas/firmware/jonas_firmware/components/micro_ros_espidf_component
+      type: local
+    targets:
+    - esp32
+    - esp32s2
+    - esp32s3
+    - esp32c3
+    - esp32c6
+    - esp32p4
+    version: 24.0.0
+direct_dependencies:
+- idf
+- micro-ros/micro_ros_espidf_component
+manifest_hash: de3d92a684fec894808b29405178101f2cc070adbdecd4f65f173c183bb784bf
+target: esp32s3
+version: 2.0.0

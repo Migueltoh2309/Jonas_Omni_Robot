@@ -1,0 +1,36 @@
+menu "Jonas"
+
+    config MICRO_ROS_APP_STACK
+        int "Stack de la tarea micro-ROS (bytes)"
+        default 16000
+
+    config MICRO_ROS_APP_TASK_PRIO
+        int "Prioridad de la tarea micro-ROS"
+        default 5
+
+    config JONAS_UART_BAUD
+        int "Baudrate UART micro-ROS (debe coincidir con el Agent: -b)"
+        default 115200
+
+    config JONAS_ROS_DOMAIN_ID
+        int "ROS_DOMAIN_ID"
+        range 0 232
+        default 0
+
+    config JONAS_CMD_TIMEOUT_MS
+        int "Timeout de /cmd_vel (ms): sin comandos -> motores a 0"
+        default 500
+
+    config JONAS_CONTROL_HZ
+        int "Frecuencia del lazo de control (Hz)"
+        default 100
+
+    config JONAS_WHEEL_RADIUS_MM
+        int "Radio de rueda (mm) - MEDIR"
+        default 30
+
+    config JONAS_BASE_RADIUS_MM
+        int "Distancia centro del robot -> rueda (mm) - MEDIR"
+        default 100
+
+endmenu

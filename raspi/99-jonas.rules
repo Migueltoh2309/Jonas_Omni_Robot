@@ -1,0 +1,6 @@
+# Jonas: nombre fijo para el ESP32-S3 (puerto "UART" de la DevKitC-1, chip USB-serial CH343).
+# Instalar en la Raspberry Pi:
+#   sudo cp raspi/99-jonas.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload && sudo udevadm trigger
+# Resultado: /dev/jonas_esp32 -> /dev/ttyACMx
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", SYMLINK+="jonas_esp32", GROUP="dialout", MODE="0660"

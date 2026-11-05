@@ -1,0 +1,4 @@
+[submodule "firmware/jonas_firmware/components/micro_ros_espidf_component"]
+	path = firmware/jonas_firmware/components/micro_ros_espidf_component
+	url = https://github.com/micro-ROS/micro_ros_espidf_component.git
+	branch = jazzy
