@@ -33,6 +33,8 @@ def main():
     ap.add_argument("--id", type=int, required=True)
     ap.add_argument("--delta", type=int, default=150, help="recorrido en pasos a cada lado (150 ≈ 13°)")
     ap.add_argument("--rpm", type=float, default=7.0, help="velocidad máxima del movimiento")
+    ap.add_argument("--seconds", type=float, default=0.0,
+                    help="si > 0, va y vuelve entre los extremos durante ese tiempo (s)")
     args = ap.parse_args()
 
     t = TABLE[args.proto]
@@ -80,8 +82,17 @@ def main():
         write(t["torque"], 1, 1, "encender torque")
 
         lo, hi = max(0, start - args.delta), min(4095, start + args.delta)
-        for goal in (hi, lo, start):
-            go_to(goal)
+        if args.seconds > 0:
+            t_end = time.time() + args.seconds
+            while time.time() < t_end:
+                go_to(hi)
+                if time.time() >= t_end:
+                    break
+                go_to(lo)
+            go_to(start)
+        else:
+            for goal in (hi, lo, start):
+                go_to(goal)
     finally:
         try:
             write(t["torque"], 1, 0, "apagar torque")
