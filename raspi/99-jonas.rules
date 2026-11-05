@@ -1,6 +1,12 @@
-# Jonas: nombre fijo para el ESP32-S3 (puerto "UART" de la DevKitC-1, chip USB-serial CH343).
+# Jonas: nombres fijos para los dispositivos USB-serial del robot.
 # Instalar en la Raspberry Pi:
 #   sudo cp raspi/99-jonas.rules /etc/udev/rules.d/
 #   sudo udevadm control --reload && sudo udevadm trigger
-# Resultado: /dev/jonas_esp32 -> /dev/ttyACMx
+
+# ESP32-S3 (puerto "UART" de la DevKitC-1, chip CH343) -> /dev/jonas_esp32
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", SYMLINK+="jonas_esp32", GROUP="dialout", MODE="0660"
+
+# U2D2 (ROBOTIS, chip FTDI FT232H) para los Dynamixel MX-28AT de los brazos -> /dev/jonas_u2d2
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6014", SYMLINK+="jonas_u2d2", GROUP="dialout", MODE="0660"
+# Latencia del FTDI a 1 ms (por defecto 16 ms: hace muy lenta la comunicación con los Dynamixel)
+ACTION=="add", SUBSYSTEM=="usb-serial", DRIVER=="ftdi_sio", ATTR{latency_timer}="1"
