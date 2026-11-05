@@ -9,6 +9,7 @@ Modos:
     python3 test_brazos.py --ids 3 --goto 2048  # llevar un motor a una posición absoluta (2048 = centro)
     python3 test_brazos.py --leer               # solo leer el estado, sin mover nada
 
+En la Raspi el SDK viene con ROS: antes, `source /opt/ros/jazzy/setup.bash`.
 Por defecto usa /dev/jonas_u2d2 (Raspi). En la laptop: --port /dev/ttyUSB0
 Al terminar (o con Ctrl+C) apaga el torque de todos los motores.
 
