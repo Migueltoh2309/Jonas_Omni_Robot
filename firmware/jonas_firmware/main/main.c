@@ -1,28 +1,34 @@
 // Jonas - firmware base ESP32-S3
 //
-// micro-ROS (Jazzy) por UART0 hacia el micro_ros_agent. Control de velocidad por rueda a
-// CONFIG_JONAS_CONTROL_HZ: encoder (PCNT) -> PID -> Cytron MDD10A (PWM + DIR).
+// micro-ROS (Jazzy) por UART0 hacia el micro_ros_agent de la Raspberry Pi.
+// Control de velocidad por rueda a CONFIG_JONAS_CONTROL_HZ: encoder (PCNT) -> PI -> Cytron MDD10A.
+// La cinemática (/cmd_vel -> ruedas) y la odometría (ticks -> /odom) se hacen en la Raspi (ROS 2).
 //
-// Entradas (de mayor a menor prioridad; cada una vale mientras llegue al menos cada
+// Entradas (de mayor a menor prioridad; cada comando vale mientras llegue al menos cada
 // CONFIG_JONAS_CMD_TIMEOUT_MS, si no -> motores a 0):
-//   /jonas/wheel_pwm     std_msgs/Float32MultiArray  duty por rueda [-1..1], LAZO ABIERTO (pruebas)
-//   /jonas/wheel_vel_cmd std_msgs/Float32MultiArray  velocidad por rueda [rad/s], con PID
-//   /cmd_vel             geometry_msgs/Twist         velocidad del robot -> cinemática -> PID
-//   /jonas/pid_gains     std_msgs/Float32MultiArray  [kp, ki, kd] o [kp, ki, kd, kff] (persiste hasta reiniciar)
-// Salida:
-//   /jonas/wheel_state   std_msgs/Float32MultiArray  50 Hz: [objetivo x3, medida x3, duty x3]
+//   /jonas/wheel_pwm        std_msgs/Float32MultiArray  duty por rueda [-1..1], LAZO ABIERTO (pruebas)
+//   /jonas/wheel_vel_cmd    std_msgs/Float32MultiArray  velocidad por rueda [rad/s], con PI
+// Configuración en vivo (se pierde al reiniciar):
+//   /jonas/pid_gains        std_msgs/Float32MultiArray  [kp, ki, kd] o [kp, ki, kd, kff]
+//   /jonas/wheel_state_rate std_msgs/Int32              Hz de /jonas/wheel_state (divisor de 50; 0 = apagado)
+// Salidas:
+//   /jonas/wheel_ticks      std_msgs/Int32MultiArray    50 Hz: [t_ms, ticks1, ticks2, ticks3] (para odometría)
+//   /jonas/wheel_state      std_msgs/Float32MultiArray  25 Hz por defecto: [objetivo x3, medida x3, duty x3]
+//   /jonas/status           std_msgs/String             al conectar y cada 2 s
 
 #include <math.h>
+#include <stdarg.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "driver/uart.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include <geometry_msgs/msg/twist.h>
 #include <rcl/error_handling.h>
 #include <rcl/rcl.h>
 #include <rclc/executor.h>
@@ -30,15 +36,13 @@
 #include <rmw_microros/rmw_microros.h>
 #include <rmw_microxrcedds_c/config.h>
 #include <std_msgs/msg/float32_multi_array.h>
+#include <std_msgs/msg/int32.h>
+#include <std_msgs/msg/int32_multi_array.h>
 #include <std_msgs/msg/string.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include "esp_system.h"
 
 #include "encoder.h"
 #include "jonas_hw.h"
 #include "motor.h"
-#include "omni_kinematics.h"
 #include "pid.h"
 #include "uart_transport.h"
 
@@ -58,7 +62,11 @@ static const char *TAG = "jonas";
         (void)rc_;                 \
     } while (0)
 
-#define NW OMNI_NUM_WHEELS
+#define NW 3                        // ruedas (posiciones en la tabla JONAS_WHEEL_HW)
+#define PUB_PERIOD_MS 20            // timer de publicación: 50 Hz
+#define PUB_HZ (1000 / PUB_PERIOD_MS)
+#define STATUS_PERIOD_TICKS 100     // /jonas/status cada 100 ciclos = 2 s
+#define WHEEL_STATE_DEFAULT_HZ 25
 
 // ---------------------------------------------------------------- estado compartido
 
@@ -69,8 +77,6 @@ typedef struct {
     int64_t stamp_us;   // 0 = nunca recibido
 } timed_cmd_t;
 
-static float s_cmd_vx, s_cmd_vy, s_cmd_wz;
-static int64_t s_cmd_vel_stamp_us;
 static timed_cmd_t s_wheel_vel_cmd;
 static timed_cmd_t s_wheel_pwm_cmd;
 static pid_gains_t s_gains = {
@@ -78,17 +84,19 @@ static pid_gains_t s_gains = {
 };
 static volatile bool s_agent_connected;
 
-// Salida del lazo de control (para /jonas/wheel_state)
-static float s_state[3 * NW];
+// Salidas del lazo de control
+static float s_state[3 * NW];       // /jonas/wheel_state: objetivo, medida, duty
+static int32_t s_ticks[NW];         // /jonas/wheel_ticks: cuentas acumuladas de encoder
+static int32_t s_ticks_ms;          // instante (ms desde el arranque) en que se leyeron los encoders
+
+static volatile int s_state_div = PUB_HZ / WHEEL_STATE_DEFAULT_HZ;   // publicar cada N ciclos (0 = apagado)
 
 // Diagnóstico para /jonas/status (reemplaza a los logs cuando solo hay un cable: el UART)
-typedef enum { MODE_STOP, MODE_PWM, MODE_VEL, MODE_CMD_VEL } ctrl_mode_t;
-static const char *const MODE_NAMES[] = {"parado", "pwm", "vel", "cmd_vel"};
+typedef enum { MODE_STOP, MODE_PWM, MODE_VEL } ctrl_mode_t;
+static const char *const MODE_NAMES[] = {"parado", "pwm", "vel"};
 static volatile ctrl_mode_t s_mode = MODE_STOP;
-static int s_reconnects;        // conexiones al Agent desde el arranque (1 = primera conexión)
+static int s_connections;       // conexiones al Agent desde el arranque
 static int s_create_failures;   // intentos fallidos de crear entidades
-
-static omni_params_t s_omni;
 
 // ---------------------------------------------------------------- lazo de control
 
@@ -118,7 +126,8 @@ static void control_task(void *arg)
     const float rad_per_count = 2.0f * (float)M_PI / JONAS_ENCODER_CPR;
 
     pid_state_t pid[NW];
-    int32_t last_count[NW];
+    int32_t count[NW] = {0};
+    int32_t last_count[NW] = {0};
     float w_meas[NW] = {0};
     // Media móvil por rueda (buffer circular + suma acumulada)
     float filt_buf[NW][JONAS_VEL_FILTER_WINDOW] = {{0}};
@@ -138,11 +147,11 @@ static void control_task(void *arg)
         const float dt = (now - last_us) * 1e-6f;
         last_us = now;
 
-        // 1) Velocidad medida
+        // 1) Encoders: cuenta acumulada y velocidad medida
         for (int i = 0; i < JONAS_NUM_MOTORS; i++) {
-            int32_t c = encoder_get_count(i);
-            int32_t delta = c - last_count[i];
-            last_count[i] = c;
+            count[i] = encoder_get_count(i);
+            int32_t delta = count[i] - last_count[i];
+            last_count[i] = count[i];
             float w_raw = (dt > 0.0f) ? delta * rad_per_count / dt : 0.0f;
             filt_sum[i] += w_raw - filt_buf[i][filt_idx];
             filt_buf[i][filt_idx] = w_raw;
@@ -151,15 +160,9 @@ static void control_task(void *arg)
         filt_idx = (filt_idx + 1) % JONAS_VEL_FILTER_WINDOW;
 
         // 2) Comandos vigentes
-        float vx, vy, wz;
         timed_cmd_t pwm_cmd, vel_cmd;
-        int64_t cmd_vel_stamp;
         pid_gains_t g;
         taskENTER_CRITICAL(&s_lock);
-        vx = s_cmd_vx;
-        vy = s_cmd_vy;
-        wz = s_cmd_wz;
-        cmd_vel_stamp = s_cmd_vel_stamp_us;
         pwm_cmd = s_wheel_pwm_cmd;
         vel_cmd = s_wheel_vel_cmd;
         g = s_gains;
@@ -168,28 +171,21 @@ static void control_task(void *arg)
         float target[NW] = {0};
         float duty[NW] = {0};
         const bool ok = s_agent_connected;
-
         ctrl_mode_t mode = MODE_STOP;
+
         if (ok && is_fresh(pwm_cmd.stamp_us, now)) {
-            // Lazo abierto
-            mode = MODE_PWM;
+            mode = MODE_PWM;   // lazo abierto
             for (int i = 0; i < NW; i++) {
                 duty[i] = fmaxf(-1.0f, fminf(1.0f, pwm_cmd.vals[i]));
                 pid_reset(&pid[i]);
             }
         } else {
-            bool active = false;
-            if (ok && is_fresh(vel_cmd.stamp_us, now)) {
-                memcpy(target, vel_cmd.vals, sizeof(target));
-                active = true;
+            const bool active = ok && is_fresh(vel_cmd.stamp_us, now);
+            if (active) {
                 mode = MODE_VEL;
-            } else if (ok && is_fresh(cmd_vel_stamp, now)) {
-                omni_inverse(&s_omni, vx, vy, wz, target);
-                active = true;
-                mode = MODE_CMD_VEL;
+                memcpy(target, vel_cmd.vals, sizeof(target));
+                limit_wheel_speeds(target);
             }
-            limit_wheel_speeds(target);
-
             for (int i = 0; i < NW; i++) {
                 if (!active || target[i] == 0.0f) {
                     duty[i] = 0.0f;
@@ -199,7 +195,6 @@ static void control_task(void *arg)
                 }
             }
         }
-
         s_mode = mode;
 
         // 3) Actuar
@@ -207,12 +202,16 @@ static void control_task(void *arg)
             motor_set(i, duty[i]);
         }
 
+        // 4) Publicar al resto del sistema
         taskENTER_CRITICAL(&s_lock);
         for (int i = 0; i < NW; i++) {
+            const bool present = i < JONAS_NUM_MOTORS;
             s_state[i] = target[i];
-            s_state[NW + i] = (i < JONAS_NUM_MOTORS) ? w_meas[i] : 0.0f;
-            s_state[2 * NW + i] = (i < JONAS_NUM_MOTORS) ? duty[i] : 0.0f;
+            s_state[NW + i] = present ? w_meas[i] : 0.0f;
+            s_state[2 * NW + i] = present ? duty[i] : 0.0f;
+            s_ticks[i] = present ? count[i] : 0;
         }
+        s_ticks_ms = (int32_t)(now / 1000);
         taskEXIT_CRITICAL(&s_lock);
     }
 }
@@ -223,24 +222,24 @@ static void control_task(void *arg)
 static rcl_allocator_t s_allocator;
 static rclc_support_t s_support;
 static rcl_node_t s_node;
-static rcl_subscription_t s_sub_cmd_vel, s_sub_wheel_vel, s_sub_wheel_pwm, s_sub_gains;
-static rcl_publisher_t s_pub_state, s_pub_status;
+static rcl_subscription_t s_sub_wheel_vel, s_sub_wheel_pwm, s_sub_gains, s_sub_state_rate;
+static rcl_publisher_t s_pub_state, s_pub_ticks, s_pub_status;
 static rcl_timer_t s_pub_timer;
 static rclc_executor_t s_executor;
 
-static geometry_msgs__msg__Twist s_twist_msg;
 static std_msgs__msg__Float32MultiArray s_vel_msg, s_pwm_msg, s_gains_msg, s_state_msg;
 static float s_vel_buf[NW], s_pwm_buf[NW], s_gains_buf[4], s_state_buf[3 * NW];
+static std_msgs__msg__Int32MultiArray s_ticks_msg;
+static int32_t s_ticks_buf[1 + NW];
+static std_msgs__msg__Int32 s_state_rate_msg;
 static std_msgs__msg__String s_status_msg;
 static char s_status_buf[160];
-
-#define STATUS_PERIOD_TICKS 100   // cada 100 ciclos del timer de 20 ms = 2 s
 
 static const char *reset_reason_str(esp_reset_reason_t r)
 {
     switch (r) {
     case ESP_RST_POWERON:   return "encendido";
-    case ESP_RST_SW:        return "reinicio por software/flasheo";
+    case ESP_RST_SW:        return "reinicio por software";
     case ESP_RST_PANIC:     return "PANIC";
     case ESP_RST_INT_WDT:   return "watchdog de interrupciones";
     case ESP_RST_TASK_WDT:  return "watchdog de tareas";
@@ -250,6 +249,12 @@ static const char *reset_reason_str(esp_reset_reason_t r)
     case ESP_RST_DEEPSLEEP: return "deep sleep";
     default:                return "desconocido";
     }
+}
+
+static int state_rate_hz(void)
+{
+    int div = s_state_div;
+    return div > 0 ? PUB_HZ / div : 0;
 }
 
 static void publish_status(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
@@ -274,17 +279,6 @@ static void init_array_msg(std_msgs__msg__Float32MultiArray *m, float *buf, size
     m->data.data = buf;
     m->data.capacity = cap;
     m->data.size = size;
-}
-
-static void cmd_vel_cb(const void *msgin)
-{
-    const geometry_msgs__msg__Twist *m = (const geometry_msgs__msg__Twist *)msgin;
-    taskENTER_CRITICAL(&s_lock);
-    s_cmd_vx = (float)m->linear.x;
-    s_cmd_vy = (float)m->linear.y;
-    s_cmd_wz = (float)m->angular.z;
-    s_cmd_vel_stamp_us = esp_timer_get_time();
-    taskEXIT_CRITICAL(&s_lock);
 }
 
 static void store_wheel_cmd(timed_cmd_t *dst, const std_msgs__msg__Float32MultiArray *m)
@@ -324,7 +318,21 @@ static void gains_cb(const void *msgin)
     }
     pid_gains_t g = s_gains;
     taskEXIT_CRITICAL(&s_lock);
-    ESP_LOGI(TAG, "PID: kp=%.4f ki=%.4f kd=%.4f kff=%.4f", g.kp, g.ki, g.kd, g.kff);
+    publish_status("PID: kp=%.4f ki=%.4f kd=%.4f kff=%.4f", g.kp, g.ki, g.kd, g.kff);
+}
+
+// Hz pedidos -> divisor entero de 50 Hz (redondeado). 0 o negativo = apagado.
+static void state_rate_cb(const void *msgin)
+{
+    const int hz = ((const std_msgs__msg__Int32 *)msgin)->data;
+    int div = 0;
+    if (hz > 0) {
+        div = (PUB_HZ + hz / 2) / hz;
+        if (div < 1) div = 1;
+        if (div > PUB_HZ) div = PUB_HZ;
+    }
+    s_state_div = div;
+    publish_status("wheel_state a %d Hz", state_rate_hz());
 }
 
 static void pub_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
@@ -333,17 +341,26 @@ static void pub_timer_cb(rcl_timer_t *timer, int64_t last_call_time)
     if (timer == NULL) {
         return;
     }
+    static int tick;
+    tick++;
+
     taskENTER_CRITICAL(&s_lock);
+    s_ticks_buf[0] = s_ticks_ms;
+    memcpy(&s_ticks_buf[1], s_ticks, sizeof(s_ticks));
     memcpy(s_state_buf, s_state, sizeof(s_state_buf));
     taskEXIT_CRITICAL(&s_lock);
-    RCSOFTCHECK(rcl_publish(&s_pub_state, &s_state_msg, NULL));
 
-    static int ticks;
-    if (++ticks >= STATUS_PERIOD_TICKS) {
-        ticks = 0;
-        publish_status("uptime=%llds modo=%s conexiones=%d fallos_creacion=%d",
-                       (long long)(esp_timer_get_time() / 1000000), MODE_NAMES[s_mode], s_reconnects,
-                       s_create_failures);
+    RCSOFTCHECK(rcl_publish(&s_pub_ticks, &s_ticks_msg, NULL));
+
+    const int div = s_state_div;
+    if (div > 0 && tick % div == 0) {
+        RCSOFTCHECK(rcl_publish(&s_pub_state, &s_state_msg, NULL));
+    }
+
+    if (tick % STATUS_PERIOD_TICKS == 0) {
+        publish_status("uptime=%llds modo=%s conexiones=%d fallos_creacion=%d wheel_state=%dHz",
+                       (long long)(esp_timer_get_time() / 1000000), MODE_NAMES[s_mode], s_connections,
+                       s_create_failures, state_rate_hz());
     }
 }
 
@@ -359,24 +376,27 @@ static bool create_entities(void)
 
     RCCHECK(rclc_node_init_default(&s_node, "jonas_base", "", &s_support));
 
-    const rosidl_message_type_support_t *ts_arr = ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray);
+    const rosidl_message_type_support_t *ts_f32arr = ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray);
+    RCCHECK(rclc_subscription_init_default(&s_sub_wheel_vel, &s_node, ts_f32arr, "jonas/wheel_vel_cmd"));
+    RCCHECK(rclc_subscription_init_default(&s_sub_wheel_pwm, &s_node, ts_f32arr, "jonas/wheel_pwm"));
+    RCCHECK(rclc_subscription_init_default(&s_sub_gains, &s_node, ts_f32arr, "jonas/pid_gains"));
     RCCHECK(rclc_subscription_init_default(
-        &s_sub_cmd_vel, &s_node, ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "cmd_vel"));
-    RCCHECK(rclc_subscription_init_default(&s_sub_wheel_vel, &s_node, ts_arr, "jonas/wheel_vel_cmd"));
-    RCCHECK(rclc_subscription_init_default(&s_sub_wheel_pwm, &s_node, ts_arr, "jonas/wheel_pwm"));
-    RCCHECK(rclc_subscription_init_default(&s_sub_gains, &s_node, ts_arr, "jonas/pid_gains"));
+        &s_sub_state_rate, &s_node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32), "jonas/wheel_state_rate"));
 
-    RCCHECK(rclc_publisher_init_best_effort(&s_pub_state, &s_node, ts_arr, "jonas/wheel_state"));
+    RCCHECK(rclc_publisher_init_best_effort(
+        &s_pub_ticks, &s_node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32MultiArray), "jonas/wheel_ticks"));
+    RCCHECK(rclc_publisher_init_best_effort(&s_pub_state, &s_node, ts_f32arr, "jonas/wheel_state"));
     RCCHECK(rclc_publisher_init_default(
         &s_pub_status, &s_node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String), "jonas/status"));
-    RCCHECK(rclc_timer_init_default2(&s_pub_timer, &s_support, RCL_MS_TO_NS(20), pub_timer_cb, true));
+    RCCHECK(rclc_timer_init_default2(&s_pub_timer, &s_support, RCL_MS_TO_NS(PUB_PERIOD_MS), pub_timer_cb, true));
 
     s_executor = rclc_executor_get_zero_initialized_executor();
     RCCHECK(rclc_executor_init(&s_executor, &s_support.context, 5, &s_allocator));
-    RCCHECK(rclc_executor_add_subscription(&s_executor, &s_sub_cmd_vel, &s_twist_msg, &cmd_vel_cb, ON_NEW_DATA));
     RCCHECK(rclc_executor_add_subscription(&s_executor, &s_sub_wheel_vel, &s_vel_msg, &wheel_vel_cb, ON_NEW_DATA));
     RCCHECK(rclc_executor_add_subscription(&s_executor, &s_sub_wheel_pwm, &s_pwm_msg, &wheel_pwm_cb, ON_NEW_DATA));
     RCCHECK(rclc_executor_add_subscription(&s_executor, &s_sub_gains, &s_gains_msg, &gains_cb, ON_NEW_DATA));
+    RCCHECK(rclc_executor_add_subscription(&s_executor, &s_sub_state_rate, &s_state_rate_msg, &state_rate_cb,
+                                           ON_NEW_DATA));
     RCCHECK(rclc_executor_add_timer(&s_executor, &s_pub_timer));
 
     return true;
@@ -387,12 +407,13 @@ static void destroy_entities(void)
     rmw_context_t *rmw_ctx = rcl_context_get_rmw_context(&s_support.context);
     (void)rmw_uros_set_context_entity_destroy_session_timeout(rmw_ctx, 0);
 
+    RCSOFTCHECK(rcl_publisher_fini(&s_pub_ticks, &s_node));
     RCSOFTCHECK(rcl_publisher_fini(&s_pub_state, &s_node));
     RCSOFTCHECK(rcl_publisher_fini(&s_pub_status, &s_node));
-    RCSOFTCHECK(rcl_subscription_fini(&s_sub_cmd_vel, &s_node));
     RCSOFTCHECK(rcl_subscription_fini(&s_sub_wheel_vel, &s_node));
     RCSOFTCHECK(rcl_subscription_fini(&s_sub_wheel_pwm, &s_node));
     RCSOFTCHECK(rcl_subscription_fini(&s_sub_gains, &s_node));
+    RCSOFTCHECK(rcl_subscription_fini(&s_sub_state_rate, &s_node));
     RCSOFTCHECK(rcl_timer_fini(&s_pub_timer));
     RCSOFTCHECK(rclc_executor_fini(&s_executor));
     RCSOFTCHECK(rcl_node_fini(&s_node));
@@ -425,7 +446,7 @@ static void micro_ros_task(void *arg)
                 publish_status("conectado: arranque por %s, uptime=%llds, motores=%d, conexiones=%d, "
                                "fallos_creacion=%d, dominio=%d",
                                reset_reason_str(esp_reset_reason()), (long long)(esp_timer_get_time() / 1000000),
-                               JONAS_NUM_MOTORS, ++s_reconnects, s_create_failures, CONFIG_JONAS_ROS_DOMAIN_ID);
+                               JONAS_NUM_MOTORS, ++s_connections, s_create_failures, CONFIG_JONAS_ROS_DOMAIN_ID);
             } else {
                 s_create_failures++;
                 destroy_entities();
@@ -464,7 +485,7 @@ static uart_port_t s_uart_port = UART_NUM_0;
 void app_main(void)
 {
     // Primero que nada: todas las salidas de motor en bajo (evita tirones al arrancar).
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < NW; i++) {
         motor_force_low(JONAS_WHEEL_HW[i].pwm, JONAS_WHEEL_HW[i].dir);
     }
 
@@ -474,12 +495,14 @@ void app_main(void)
         ESP_ERROR_CHECK(encoder_init(i, hw->enc_a, hw->enc_b, hw->invert_encoder));
     }
 
-    omni_init(&s_omni, CONFIG_JONAS_WHEEL_RADIUS_MM / 1000.0f, CONFIG_JONAS_BASE_RADIUS_MM / 1000.0f);
-
     init_array_msg(&s_vel_msg, s_vel_buf, NW, 0);
     init_array_msg(&s_pwm_msg, s_pwm_buf, NW, 0);
     init_array_msg(&s_gains_msg, s_gains_buf, 4, 0);
     init_array_msg(&s_state_msg, s_state_buf, 3 * NW, 3 * NW);
+    memset(&s_ticks_msg, 0, sizeof(s_ticks_msg));
+    s_ticks_msg.data.data = s_ticks_buf;
+    s_ticks_msg.data.capacity = 1 + NW;
+    s_ticks_msg.data.size = 1 + NW;
 
 #if defined(RMW_UXRCE_TRANSPORT_CUSTOM)
     rmw_uros_set_custom_transport(true, (void *)&s_uart_port, jonas_uart_open, jonas_uart_close,

@@ -3,15 +3,16 @@
 **Jonas** es un robot móvil omnidireccional de 3 ruedas omni a 120°.
 
 - **Cerebro:** Raspberry Pi 5 con **Ubuntu 24.04 MATE** y **ROS 2 Jazzy**.
-- **Control de bajo nivel:** **ESP32-S3** con **micro-ROS**, que corre el PI de velocidad de cada motor a 100 Hz y la cinemática omnidireccional.
+- **Control de bajo nivel:** **ESP32-S3** con **micro-ROS**, que corre el PI de velocidad de cada motor a 100 Hz y publica los ticks de los encoders.
+- **Cinemática y odometría:** en la Raspi, en ROS 2 (Python), para cambiar la geometría sin reflashear.
 - **Comunicación:** el ESP32 y la Raspi se comunican por **un solo cable USB** (serial), a través del **micro-ROS Agent**.
 
 ```
  Laptop (desarrollo)  ── WiFi / SSH ──►  Raspberry Pi 5                ── USB ──►  ESP32-S3
  - código + ESP-IDF                       Ubuntu 24.04 MATE · ROS 2 Jazzy            micro-ROS (Jazzy)
  - compila el firmware                    - micro-ROS Agent                          - PI x3 @ 100 Hz
- - flashea a través de la Raspi           - esptool (flasheo remoto)                 - cinemática omni
-                                          - (futuro) odometría, Nav2, cámara, lidar  - encoders (PCNT)
+ - flashea a través de la Raspi           - esptool (flasheo remoto)                 - ticks de encoder @ 50 Hz
+                                          - (futuro) cinemática, odometría, Nav2     - encoders (PCNT)
                                                                                          │
                                                                      2x Cytron MDD10A ── 3x motor Pololu 12 V + encoder
 ```
@@ -22,19 +23,20 @@
 |---|---|
 | Firmware ESP32-S3: micro-ROS Jazzy por serial, reconexión automática, watchdog de comandos | ✅ |
 | PI de velocidad en las 3 ruedas (t90 ≈ 0.25 s, sobrepico ≤ 1 %, error ≈ 0, ruedas en el aire) | ✅ |
-| Cinemática inversa omni (`/cmd_vel` → velocidades de rueda) | ✅ (falta poner las medidas reales) |
+| Ticks de encoder para odometría (`/jonas/wheel_ticks`, 50 Hz, robustos a pérdida de mensajes) | ✅ |
+| Cinemática (`/cmd_vel` → ruedas) y odometría (`/odom`, TF) en la Raspi, en Python | ⏳ (siguiente) |
 | micro-ROS Agent en la Raspi 5 | ✅ |
 | Flasheo remoto del ESP32 a través de la Raspi (sin cable a la laptop) | ✅ |
 | Diagnóstico por ROS (`/jonas/status`) | ✅ |
 | Medidas reales (radio de rueda, distancia al centro) y pruebas en el piso | ⏳ |
-| Odometría (`/odom`, TF), URDF, launch, arranque automático (systemd) | ⏳ |
+| URDF, launch, arranque automático (systemd) | ⏳ |
 
 ## Contenido del repositorio
 
 ```
 .
 ├── firmware/jonas_firmware/        Firmware ESP32-S3 (ESP-IDF 5.5 + micro-ROS Jazzy)
-│   ├── main/                       main.c, PI, encoders, motores, cinemática, transporte UART
+│   ├── main/                       main.c, PI, encoders, motores, transporte UART
 │   │   └── jonas_hw.h              ← pines, CPR, inversiones, ganancias PI, nº de motores
 │   ├── components/micro_ros_espidf_component/   (submódulo git, rama jazzy)
 │   ├── app-colcon.meta             ajustes de micro-ROS (¡importantes para serial!)
@@ -224,11 +226,12 @@ Después se queda quieto; eso es normal.
 
 | Tópico | Tipo | Dir. | Descripción |
 |---|---|---|---|
-| `/cmd_vel` | `geometry_msgs/Twist` | → ESP32 | velocidad del robot (`linear.x`, `linear.y`, `angular.z`) → cinemática → PI |
-| `/jonas/wheel_vel_cmd` | `std_msgs/Float32MultiArray` | → ESP32 | velocidad de cada rueda [rad/s], con PI (prioridad sobre `/cmd_vel`) |
+| `/jonas/wheel_vel_cmd` | `std_msgs/Float32MultiArray` | → ESP32 | velocidad de cada rueda [rad/s], con PI (**entrada principal**) |
 | `/jonas/wheel_pwm` | `std_msgs/Float32MultiArray` | → ESP32 | duty por rueda [−1..1], **lazo abierto**, para pruebas (máxima prioridad) |
 | `/jonas/pid_gains` | `std_msgs/Float32MultiArray` | → ESP32 | `[kp, ki, kd]` o `[kp, ki, kd, kff]` en vivo (se pierden al reiniciar) |
-| `/jonas/wheel_state` | `std_msgs/Float32MultiArray` | ESP32 → | 50 Hz: `[objetivo x3, medida x3, duty x3]` |
+| `/jonas/wheel_state_rate` | `std_msgs/Int32` | → ESP32 | frecuencia de `/jonas/wheel_state` en Hz (50, 25, 10, 5, 2, 1; 0 = apagado) |
+| `/jonas/wheel_ticks` | `std_msgs/Int32MultiArray` | ESP32 → | 50 Hz: `[t_ms, ticks1, ticks2, ticks3]`, cuentas acumuladas, para la odometría |
+| `/jonas/wheel_state` | `std_msgs/Float32MultiArray` | ESP32 → | 25 Hz por defecto: `[objetivo x3, medida x3, duty x3]`, para depurar |
 | `/jonas/status` | `std_msgs/String` | ESP32 → | al conectar (motivo del último arranque) y cada 2 s (uptime, modo, conexiones) |
 
 **Seguridad:** cada comando vale mientras llegue al menos cada **500 ms**. Si deja de llegar, o si se pierde el Agent, los motores se detienen. El ESP32 se reconecta solo.
@@ -241,7 +244,7 @@ Después se queda quieto; eso es normal.
 ros2 topic echo /jonas/status
 ros2 topic echo /jonas/wheel_state --qos-reliability best_effort
 ros2 topic pub -r 20 /jonas/wheel_vel_cmd std_msgs/msg/Float32MultiArray "{data: [2.0, 2.0, 2.0]}"   # 2 rad/s cada rueda
-ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1}}"                           # adelante
+ros2 topic echo /jonas/wheel_ticks --qos-reliability best_effort                                   # ticks acumulados
 ~/jonas/firmware/jonas_firmware/tools/step_test.sh          # escalones ±20/±50 RPM + tabla por rueda
 ```
 
@@ -262,8 +265,8 @@ El script detiene el Agent de la Raspi (el puerto no puede estar ocupado), flash
 | Qué | Dónde |
 |---|---|
 | Pines, CPR, inversión de motor o encoder, nº de motores, ganancias PI, filtro | `firmware/jonas_firmware/main/jonas_hw.h` |
-| Radio de rueda, distancia al centro, baudrate, `ROS_DOMAIN_ID`, frecuencia de control, timeout | `./idf.sh menuconfig` → menú **Jonas** |
-| Ángulos de las ruedas (0°, 120°, 240°) | `firmware/jonas_firmware/main/omni_kinematics.c` |
+| Baudrate, `ROS_DOMAIN_ID`, frecuencia de control, timeout de comandos | `./idf.sh menuconfig` → menú **Jonas** |
+| Geometría (radio de rueda, distancia al centro, ángulos 0°/120°/240°) | parámetros del nodo de cinemática y odometría en la Raspi (próximamente) |
 | Límites de micro-ROS (entidades, heartbeat, buffers) | `firmware/jonas_firmware/app-colcon.meta` (luego `./idf.sh clean-microros`) |
 
 Más detalles del firmware (PI, modelo del motor, sintonía): [`firmware/jonas_firmware/README.md`](firmware/jonas_firmware/README.md).
@@ -281,9 +284,9 @@ Más detalles del firmware (PI, modelo del motor, sintonía): [`firmware/jonas_f
 
 ## 7. Próximos pasos
 
+- [ ] Nodo de cinemática y odometría en Python (`ros2_ws/src/jonas_base`): `/cmd_vel` → `/jonas/wheel_vel_cmd` y `/jonas/wheel_ticks` → `/odom` + TF
 - [ ] Medidas reales (radio de rueda, distancia al centro) y prueba de `/cmd_vel` en el piso
 - [ ] Re-sintonizar el PI con carga (robot en el piso)
-- [ ] Nodo de odometría en la Raspi (`/odom` + TF `odom → base_link`) a partir de `/jonas/wheel_state`
 - [ ] URDF y launch file
 - [ ] Arranque automático con systemd
 - [ ] IMU, cámara, lidar

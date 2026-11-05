@@ -12,6 +12,9 @@ if [ -n "$2" ]; then
   sleep 1
 fi
 N=$(echo $RPMS | wc -w)
+# wheel_state a 50 Hz durante la prueba (el análisis asume 50 Hz); al final vuelve a 25 Hz.
+ros2 topic pub --once /jonas/wheel_state_rate std_msgs/msg/Int32 "{data: 50}" >/dev/null
+trap 'ros2 topic pub --once /jonas/wheel_state_rate std_msgs/msg/Int32 "{data: 25}" >/dev/null 2>&1' EXIT
 timeout $((N * 4 + 3)) ros2 topic echo --csv --qos-reliability best_effort /jonas/wheel_state \
   std_msgs/msg/Float32MultiArray > "$OUT" 2>/dev/null & EP=$!
 sleep 1

@@ -18,19 +18,14 @@ menu "Jonas"
         default 0
 
     config JONAS_CMD_TIMEOUT_MS
-        int "Timeout de /cmd_vel (ms): sin comandos -> motores a 0"
+        int "Timeout de comandos de rueda (ms): sin comandos -> motores a 0"
         default 500
 
     config JONAS_CONTROL_HZ
         int "Frecuencia del lazo de control (Hz)"
         default 100
 
-    config JONAS_WHEEL_RADIUS_MM
-        int "Radio de rueda (mm) - MEDIR"
-        default 30
-
-    config JONAS_BASE_RADIUS_MM
-        int "Distancia centro del robot -> rueda (mm) - MEDIR"
-        default 100
+    # La geometría (radio de rueda, distancia al centro, ángulos) vive en la Raspi (ROS 2),
+    # junto con la cinemática y la odometría.
 
 endmenu

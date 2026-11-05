@@ -1,162 +1,112 @@
 # jonas_firmware — ESP32-S3 + micro-ROS (Jazzy) por serial
 
-Firmware base del robot omnidireccional de 3 ruedas **Jonas**. El ESP32-S3 corre el
-control de bajo nivel y habla con ROS 2 Jazzy (Raspberry Pi 5) a través del
-`micro_ros_agent` por USB serial.
+Firmware de bajo nivel del robot **Jonas**. Hace el control rápido de cada rueda: lee los encoders,
+corre un PI de velocidad por rueda a 100 Hz y maneja los motores. Se comunica con ROS 2 Jazzy (Raspberry Pi 5)
+a través del `micro_ros_agent` por USB serial.
+
+**La cinemática (`/cmd_vel` → velocidades de rueda) y la odometría (ticks → `/odom`) se hacen en la Raspi**,
+en ROS 2. Así, la geometría del robot se cambia sin reflashear.
 
 | Componente | Versión |
 |---|---|
 | ESP-IDF | v5.5 (en `~/esp/esp-idf`; `idf.sh` también acepta `$IDF_DIR` / `$IDF_PATH`) |
-| micro-ROS | `micro_ros_espidf_component`, rama `jazzy` (en `components/`) |
-| Transporte | XRCE-DDS sobre UART0, 115200 baud |
+| micro-ROS | `micro_ros_espidf_component`, rama `jazzy` (submódulo en `components/`) |
+| Transporte | XRCE-DDS sobre UART0 (puerto "UART"/CH343 de la DevKitC), 115200 baud |
+| Dominio ROS | `CONFIG_JONAS_ROS_DOMAIN_ID=7` (en `sdkconfig.defaults`) |
 
-## Puertos de la DevKitC-1
+## Interfaz ROS 2
 
-- **Puerto "UART" (CH343, `1a86:55d3`)** → micro-ROS. Va a la Raspi. También se usa para flashear.
-- **Puerto "USB" (USB nativo, `303a:1001`)** → logs (`ESP_LOG`). Opcional, solo para depurar.
-
-Los logs NO salen por el puerto UART para no corromper el stream de micro-ROS.
-Solo los mensajes de la ROM al arrancar salen por UART0, y el Agent los ignora.
-
-## Interfaz ROS
-
-| Tópico | Tipo | Dir | Nota |
+| Tópico | Tipo | Dir. | Descripción |
 |---|---|---|---|
-| `/jonas/wheel_pwm` | `std_msgs/Float32MultiArray` | sub | duty por rueda [-1..1], **lazo abierto** (pruebas). Prioridad 1 |
-| `/jonas/wheel_vel_cmd` | `std_msgs/Float32MultiArray` | sub | velocidad por rueda [rad/s], con PID. Prioridad 2 |
-| `/cmd_vel` | `geometry_msgs/Twist` | sub | `linear.x`, `linear.y`, `angular.z` → cinemática → PID. Prioridad 3 |
-| `/jonas/pid_gains` | `std_msgs/Float32MultiArray` | sub | `[kp, ki, kd]` o `[kp, ki, kd, kff]`, en vivo (se pierde al reiniciar) |
-| `/jonas/wheel_state` | `std_msgs/Float32MultiArray` | pub | 50 Hz, best effort: `[objetivo x3, medida x3, duty x3]` (rad/s, rad/s, -1..1) |
-| `/jonas/status` | `std_msgs/String` | pub | al conectar (motivo de arranque) y cada 2 s (uptime, modo, conexiones, fallos) |
+| `/jonas/wheel_vel_cmd` | `std_msgs/Float32MultiArray` | sub | velocidad por rueda `[w1, w2, w3]` en rad/s, con PI. **Entrada principal** |
+| `/jonas/wheel_pwm` | `std_msgs/Float32MultiArray` | sub | duty por rueda [−1..1], **lazo abierto**, para pruebas (prioridad sobre `wheel_vel_cmd`) |
+| `/jonas/pid_gains` | `std_msgs/Float32MultiArray` | sub | `[kp, ki, kd]` o `[kp, ki, kd, kff]` en vivo (se pierde al reiniciar) |
+| `/jonas/wheel_state_rate` | `std_msgs/Int32` | sub | frecuencia de `/jonas/wheel_state` en Hz (divisor de 50: 50, 25, 10, 5, 2, 1; 0 = apagado) |
+| `/jonas/wheel_ticks` | `std_msgs/Int32MultiArray` | pub | **50 Hz**, best effort: `[t_ms, ticks1, ticks2, ticks3]`, para la odometría |
+| `/jonas/wheel_state` | `std_msgs/Float32MultiArray` | pub | **25 Hz** por defecto, best effort: `[objetivo x3, medida x3, duty x3]`, para depurar |
+| `/jonas/status` | `std_msgs/String` | pub | al conectar (motivo del último arranque) y cada 2 s (uptime, modo, conexiones, fallos, frecuencia) |
 
-Seguridad: cada comando vale mientras llegue al menos cada 500 ms; si no, o sin Agent → motores a 0.
-Se reconecta solo. Hardware (pines, CPR, inversiones, PID por defecto, nº de motores) en `main/jonas_hw.h`.
+### `/jonas/wheel_ticks` (odometría)
 
-Hardware actual: Cytron MDD10A (PWM 20 kHz + DIR), motor Pololu 12 V con encoder 6533 CPR (rueda).
+- `t_ms`: reloj del ESP32 en milisegundos, tomado **en el mismo instante** en que se leyeron los encoders.
+- `ticksN`: cuenta **acumulada** del encoder de la rueda N desde el arranque del ESP32 (entero exacto, 6533 por vuelta de rueda, con el signo ya corregido).
+- **Aunque se pierdan mensajes**, la diferencia de ticks entre dos mensajes da la distancia exacta recorrida. Para la velocidad, usa `Δticks / Δt_ms`.
+- Rad = ticks × 2π / 6533. Los ticks vuelven a 0 si el ESP32 se reinicia (detéctalo con `/jonas/status` o con un salto de `t_ms` hacia atrás).
 
-| Rueda | PWM | DIR | Enc A | Enc B |
-|---|---|---|---|---|
-| 1 | 4 | 5 | 2 | 42 |
-| 2 | 6 | 7 | 41 | 40 |
-| 3 | 15 | 16 | 39 | 38 |
+### Seguridad
 
-> ⚠️ **Humble y Jazzy en la misma red:** si la Raspi (Jazzy) tiene cualquier cosa de ROS 2 corriendo
-> (incluso el `ros2 daemon`) en el mismo `ROS_DOMAIN_ID`, el Agent **Humble** de la laptop se cae con
-> `fastcdr::exception::NotEnoughMemoryException`. Por eso:
->
-> | Dónde | ROS_DOMAIN_ID |
-> |---|---|
-> | Laptop (Humble) + ESP32 en el banco de pruebas | 0 (firmware: `JONAS_ROS_DOMAIN_ID=0`) |
-> | Raspi (Jazzy), en su `~/.bashrc` | **7** |
->
-> **Al pasar el ESP32 a la Raspi:** `./idf.sh menuconfig` → Jonas → `ROS_DOMAIN_ID` = **7**, y reflashear.
-> El dominio del ESP32 lo fija el firmware, no la variable de entorno del Agent.
+- Cada comando de rueda vale **500 ms** (`CONFIG_JONAS_CMD_TIMEOUT_MS`). Si deja de llegar, o si se pierde el Agent, los motores se detienen.
+- Las velocidades se limitan a `JONAS_WHEEL_MAX_RADPS` (10 rad/s). Si una rueda lo supera, las tres se escalan por igual para conservar la dirección del movimiento.
+- Al arrancar, los pines de los motores se ponen en bajo antes que cualquier otra cosa.
+- Reconexión automática al Agent.
 
-## Compilar y flashear (laptop)
+## Hardware y configuración (`main/jonas_hw.h`)
 
-`~/.bashrc` carga ROS 2 Humble, así que se usa `./idf.sh` (corre `idf.py` en un entorno limpio):
+Cytron MDD10A (PWM 20 kHz + DIR) y motores Pololu 12 V con encoder de 6533 cuentas por vuelta de rueda.
+
+| Rueda | Posición | PWM | DIR | Enc A | Enc B | invert_motor | invert_encoder |
+|---|---|---|---|---|---|---|---|
+| 1 | 0° (frente) | 4 | 5 | 2 | 42 | false | false |
+| 2 | 120° | 6 | 7 | 41 | 40 | true | false |
+| 3 | −120° | 15 | 16 | 39 | 38 | true | true |
+
+Las inversiones están verificadas: con velocidad positiva, las 3 ruedas giran en sentido **horario vistas desde
+afuera del robot** y cada encoder cuenta en el mismo sentido que su motor. `invert_motor` e `invert_encoder`
+son **independientes**: si inviertes un motor, invierte también su encoder, o el PI queda con
+realimentación positiva y se va al máximo.
+
+## Control de velocidad (PI)
+
+PI por rueda a 100 Hz, con media móvil de 7 muestras y anti-windup condicional (la misma estructura que
+`Extra/03_control_PI_velocidad.ino` del repo [SwarmBot_microROS](https://github.com/Migueltoh2309/SwarmBot_microROS)).
+
+Modelo identificado (rueda en el aire, 12 V): `G(s) = K/(τs+1)` con K ≈ 11.8 rad/s por unidad de duty,
+τ ≈ 0.08 s y zona muerta ≈ 4 %. Sintonía por cancelación de polo (Ti = τ, Tc = 0.1 s):
+**Kp = 0.068, Ki = 0.85**. Resultado: t90 ≈ 0.25 s, sobrepico ≤ 1 %, error en régimen ≈ 0 en las 3 ruedas.
+Hay que re-verificarlo con el robot en el piso.
+
+```bash
+# en la Raspi, con el Agent corriendo y LAS RUEDAS EN EL AIRE
+ros2 topic pub -r 20 /jonas/wheel_pwm std_msgs/msg/Float32MultiArray "{data: [0.15, 0.15, 0.15]}"    # lazo abierto
+ros2 topic pub -r 20 /jonas/wheel_vel_cmd std_msgs/msg/Float32MultiArray "{data: [2.0, 2.0, 2.0]}"   # 2 rad/s con PI
+ros2 topic pub --once /jonas/pid_gains std_msgs/msg/Float32MultiArray "{data: [0.068, 0.85, 0.0]}"   # ganancias en vivo
+ros2 topic pub --once /jonas/wheel_state_rate std_msgs/msg/Int32 "{data: 50}"                         # wheel_state a 50 Hz
+tools/step_test.sh               # escalones ±20/±50 RPM + tabla por rueda (pone wheel_state a 50 Hz y lo devuelve a 25)
+tools/step_test.sh 0.08 1.0      # misma prueba con otras ganancias (en vivo, no se graban)
+```
+
+Unidades: rad/s (estándar ROS). 1 rad/s = 9.549 RPM.
+
+## Compilar y flashear
 
 ```bash
 cd ~/jonas/firmware/jonas_firmware
 ./idf.sh build
-./idf.sh -p /dev/ttyACM0 flash
-./idf.sh menuconfig        # menú "Jonas": radio de rueda, distancia al centro, baudrate, domain id...
-```
-
-Si cambias `app-colcon.meta` o la rama de micro-ROS: `./idf.sh clean-microros` y recompila.
-
-## Reprogramar con el ESP32 dentro del robot (un solo cable, sin conectarlo a la laptop)
-
-```
-Laptop ── WiFi/SSH ──► Raspberry Pi 5 ── USB (puerto "UART" del ESP32) ──► ESP32-S3
-(código y compilación)  (Agent + esptool)                                   (firmware)
-```
-
-Un solo cable USB (puerto **UART**/CH343) basta para todo: micro-ROS, flasheo (reset automático por
-DTR/RTS) y recuperación (la ROM del ESP32 siempre acepta firmware nuevo, aunque el programa falle).
-
-```bash
-cd ~/jonas/firmware/jonas_firmware
-tools/flash_via_pi.sh             # compila en la laptop y flashea a través de la Raspi (~13 s)
+tools/flash_via_pi.sh             # flashea a través de la Raspi (ESP32 conectado a la Raspi), ~13 s
 tools/flash_via_pi.sh --no-build  # reflashea el último build
-PI=jonas@jonas.local tools/flash_via_pi.sh   # si cambia la IP de la Raspi
+./idf.sh -p /dev/ttyACM0 flash    # si el ESP32 está conectado directamente a la laptop
+./idf.sh menuconfig               # menú "Jonas": baudrate, ROS_DOMAIN_ID, frecuencia de control, timeout
 ```
 
-El script detiene el micro_ros_agent de la Raspi (el puerto no puede estar ocupado), flashea y, si estaba
-corriendo, lo relanza en segundo plano (log en `~/jonas_fw/agent.log` de la Raspi).
-En la Raspi: `esptool` en `~/esptool-venv` (instalado sin sudo).
+`idf.sh` ejecuta `idf.py` en un entorno limpio, sin variables de ROS 2 que puedan mezclarse al compilar micro-ROS.
 
-**Logs sin el segundo cable:** el firmware publica `/jonas/status` (`std_msgs/String`): al conectar
-(motivo del último arranque: encendido / PANIC / watchdog / brownout…) y cada 2 s (uptime, modo, conexiones,
-fallos). En la Raspi: `ros2 topic echo /jonas/status`.
+**Un solo cable basta.** El puerto "UART" (CH343) sirve para micro-ROS, para flashear (el CH343 reinicia el
+ESP32 en modo programación con DTR/RTS) y para recuperarlo: la ROM siempre acepta firmware nuevo.
+Los logs (`ESP_LOG`) salen por el puerto USB nativo, que es opcional; para diagnóstico con un solo cable,
+usa `/jonas/status`.
 
-Herramientas de prueba también en la Raspi: `~/jonas_tools/step_test.sh`.
+## Ajustes de micro-ROS (`app-colcon.meta`) — no revertir
 
-## Raspberry Pi 5 (Ubuntu 24.04 + Jazzy)
+Con serial a 115200 y 7 entidades, los valores por defecto del componente fallan. Estos ajustes son necesarios:
 
-Instalado en `~/uros_ws` (96 MB, ~7 min). Se clona el Agent directamente, sin
-`micro_ros_setup`: con `ros-jazzy-ros-base` no hace falta ningún paquete apt extra ni sudo.
+| Ajuste | Valor | Por qué |
+|---|---|---|
+| `UCLIENT_MIN_HEARTBEAT_TIME_INTERVAL` | 50 ms (el componente trae 1 ms) | con 1 ms los heartbeats saturan el serial y la creación de entidades falla por timeout |
+| `RMW_UXRCE_STREAM_HISTORY_OUTPUT` | 16 | con un historial menor que el nº de entidades, `destroy_entities()` se cuelga cuando el Agent se cae |
+| `RMW_UXRCE_STREAM_HISTORY_INPUT` | 8 | margen para varias suscripciones |
+| `RMW_UXRCE_MAX_SUBSCRIPTIONS` / `PUBLISHERS` | 4 / 6 | entidades del firmware |
 
-```bash
-source /opt/ros/jazzy/setup.bash
-mkdir -p ~/uros_ws/src && cd ~/uros_ws
-git clone --depth 1 -b jazzy https://github.com/micro-ROS/micro-ROS-Agent.git src/micro-ROS-Agent
-git clone --depth 1 -b jazzy https://github.com/micro-ROS/micro_ros_msgs.git src/micro_ros_msgs
-rosdep check --from-paths src --ignore-src      # debe decir "All system dependencies have been satisfied"
-MAKEFLAGS="-j3" colcon build --parallel-workers 2 --cmake-args -DCMAKE_BUILD_TYPE=Release
-```
+Además, en el código: el `rcl_allocator_t` que se pasa a rclc **debe ser estático**, porque rclc guarda el
+puntero. Si es una variable local, el ESP32 hace panic (`InstrFetchProhibited`) en el primer `spin_some`.
 
-Permisos y nombre fijo del puerto (una vez, ya hecho en Jonas):
-
-```bash
-sudo usermod -aG dialout $USER   # luego cerrar sesión y volver a entrar
-echo 'SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", SYMLINK+="jonas_esp32", GROUP="dialout", MODE="0660"' | sudo tee /etc/udev/rules.d/99-jonas.rules
-sudo udevadm control --reload && sudo udevadm trigger   # -> /dev/jonas_esp32
-```
-
-Correr el Agent:
-
-```bash
-source ~/uros_ws/install/local_setup.bash
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/jonas_esp32 -b 115200
-```
-
-Si `ros2 node list` muestra `/jonas_base` duplicado tras reiniciar el Agent, es caché
-del daemon de ROS: `ros2 daemon stop` o usar `--no-daemon`.
-
-## Prueba rápida
-
-```bash
-ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.2}}"
-ros2 topic echo /jonas/wheel_cmd --qos-reliability best_effort
-# con r=30 mm, L=100 mm -> [-5.77, 0.0, 5.77]; con angular.z=1.0 -> [3.33, 3.33, 3.33]
-```
-
-## Control de velocidad (PI) y pruebas
-
-PI por rueda a 100 Hz con media móvil de 7 muestras y anti-windup condicional (estructura de
-`swarmbot/Extra/03_control_PI_velocidad.ino`). Ganancias por defecto en `main/jonas_hw.h`
-(Kp = 0.068, Ki = 0.85, sintonizadas por cancelación de polo con la rueda en el aire).
-
-Con el Agent corriendo y **la rueda en el aire**:
-
-```bash
-ros2 topic pub -r 20 /jonas/wheel_pwm std_msgs/msg/Float32MultiArray "{data: [0.15, 0.0, 0.0]}"   # lazo abierto
-ros2 topic pub -r 20 /jonas/wheel_vel_cmd std_msgs/msg/Float32MultiArray "{data: [3.0, 0.0, 0.0]}" # 3 rad/s con PI
-ros2 topic pub --once /jonas/pid_gains std_msgs/msg/Float32MultiArray "{data: [0.068, 0.85, 0.0]}" # ganancias en vivo
-tools/step_test.sh               # escalones ±20/±50 RPM + tabla (t90, sobrepico, error, ruido)
-tools/step_test.sh 0.08 1.0      # misma prueba con otras ganancias (en vivo, no se graban)
-```
-
-Unidades: la interfaz usa rad/s (estándar ROS). 1 rad/s = 9.549 RPM.
-
-## Cinemática
-
-Ver `main/omni_kinematics.h`. Ruedas a 60° (del. izq.), 180° (trasera), 300° (del. der.);
-+x adelante, velocidad positiva de rueda = giro antihorario visto desde arriba.
-Ajusta `OMNI_THETA_DEG` y los parámetros del menú "Jonas" a la geometría real.
-
-## Pendiente
-
-- Drivers de motor + encoders + PID por rueda (`motors_set_targets()` es un stub).
-- Publicar velocidad medida y `/odom` (usar `omni_forward()`).
+Tras cambiar `app-colcon.meta`: `./idf.sh clean-microros` y recompilar.
