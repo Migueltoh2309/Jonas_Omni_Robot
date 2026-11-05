@@ -62,6 +62,7 @@
 | Motores | 3x Pololu 12 V con encoder en cuadratura (**6533 cuentas por vuelta de la rueda**) |
 | Ruedas | 3x ruedas omni a 120° |
 | Alimentación | 12 V para los motores (separada del USB) |
+| Brazos | 2 brazos de 3 GDL: 6x Dynamixel **MX-28AT** + 1 **U2D2** (en integración) |
 
 ### Pines del ESP32-S3
 
@@ -200,7 +201,24 @@ python3 -m venv --without-pip --system-site-packages ~/esptool-venv
 ~/esptool-venv/bin/esptool.py version
 ```
 
-#### 2.5 Acceso SSH por clave desde la laptop
+#### 2.5 Dynamixel (brazos: 6x MX-28AT con U2D2)
+
+`ros-jazzy-dynamixel-sdk` trae la librería C++ **y** los módulos de Python `dynamixel_sdk` y `dynamixel_easy_sdk` (no hace falta pip):
+
+```bash
+sudo apt install ros-jazzy-dynamixel-sdk ros-jazzy-dynamixel-sdk-examples ros-jazzy-dynamixel-sdk-custom-interfaces
+python3 -c "import dynamixel_sdk, dynamixel_easy_sdk; print('ok')"
+```
+
+La regla udev de `raspi/99-jonas.rules` (paso 2.3) crea `/dev/jonas_u2d2` y baja la latencia del FTDI del U2D2 a 1 ms
+(con los 16 ms por defecto, la comunicación es muy lenta).
+
+**Un solo U2D2 basta para los 6 servos** (bus en cadena, cada servo con un ID distinto). El U2D2 no alimenta los
+servos: usa una fuente de 12 V y ≥10 A (U2D2 Power Hub Board o SMPS2Dynamixel) con GND común.
+Antes de usarlos, con *Dynamixel Wizard 2.0* y **un servo a la vez**: asigna IDs únicos (de fábrica todos traen ID 1),
+actualízalos a **Protocolo 2.0** y configúralos a 1 Mbps.
+
+#### 2.6 Acceso SSH por clave desde la laptop
 
 En la **laptop**:
 
@@ -289,6 +307,7 @@ Más detalles del firmware (PI, modelo del motor, sintonía): [`firmware/jonas_f
 - [ ] Re-sintonizar el PI con carga (robot en el piso)
 - [ ] URDF y launch file
 - [ ] Arranque automático con systemd
+- [ ] Brazos Dynamixel MX-28AT: IDs, Protocolo 2.0, nodo de control en Python
 - [ ] IMU, cámara, lidar
 - [ ] Navigation 2
 
