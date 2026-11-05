@@ -72,8 +72,33 @@
 | 2 | 120° (atrás izquierda) | MDD10A #1, canal 2 | GPIO 6 | GPIO 7 | GPIO 41 | GPIO 40 |
 | 3 | −120° (atrás derecha) | MDD10A #2, canal 1 | GPIO 15 | GPIO 16 | GPIO 39 | GPIO 38 |
 
+```
+                         ESP32-S3 DevKitC-1
+                     ┌──────────────────────────┐
+   MDD10A #1  PWM1 ──┤ GPIO 4        GPIO 42 ├── Enc B  rueda 1
+   (canal 1)  DIR1 ──┤ GPIO 5        GPIO 41 ├── Enc A  rueda 2
+   MDD10A #1  PWM2 ──┤ GPIO 6        GPIO 40 ├── Enc B  rueda 2
+   (canal 2)  DIR2 ──┤ GPIO 7        GPIO 39 ├── Enc A  rueda 3
+   MDD10A #2  PWM1 ──┤ GPIO 15       GPIO 38 ├── Enc B  rueda 3
+   (canal 1)  DIR1 ──┤ GPIO 16       GPIO 2  ├── Enc A  rueda 1
+                     │                          │
+   Encoders VCC ─────┤ 3V3                      │
+   GND común ────────┤ GND     [UART] [USB]     │
+                     └──────────┬───────────────┘
+                                └── USB a la Raspi (/dev/jonas_esp32)
+
+   Motor Pololu (6 cables): M1/M2 → salida del canal del MDD10A
+                            VCC/GND → 3.3 V y GND del ESP32
+                            A/B → pines de encoder de la tabla
+   MDD10A: 12 V en el bornero de potencia; GND unido al del ESP32. Canal 2 del MDD10A #2: libre.
+```
+
+Los pines están definidos en `firmware/jonas_firmware/main/jonas_hw.h`. El sentido de giro se corrige por
+software (`invert_motor` / `invert_encoder`), no hace falta cruzar cables.
+
 Otros: I2C para una IMU futura (SDA 8, SCL 9), voltaje de batería con divisor (GPIO 1, ADC1).
 Pines libres: 10–14, 17, 18, 21 y 47.
+No usar: 0, 3, 45, 46 (strapping), 19/20 (USB nativo), 43/44 (UART0 = micro-ROS), 35–37 (PSRAM octal).
 
 > ⚠️ **Antes de cablear:**
 > - **Los GPIO del ESP32 aceptan como máximo 3.3 V.** Alimenta los encoders con 3.3 V; si los alimentas con 5 V, sus salidas también son de 5 V y necesitas un conversor de nivel.
