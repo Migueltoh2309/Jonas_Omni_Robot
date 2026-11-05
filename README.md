@@ -291,4 +291,8 @@ Más detalles del firmware (PI, modelo del motor, sintonía): [`firmware/jonas_f
 
 ---
 
-Autor: MiTo Olortegui Huaman — UTEC.
+## Licencia
+
+[MIT](LICENSE) © 2026 MiTo Olortegui Huaman — UTEC.
+
+El componente `micro_ros_espidf_component` (submódulo) tiene su propia licencia (Apache-2.0).
