@@ -44,7 +44,7 @@
   .stop:active { transform: scale(.96); }
 
   /* zona principal: joystick | centro | giro */
-  .main { display: grid; grid-template-columns: 1fr minmax(180px, 1.1fr) 1fr; gap: 10px; min-height: 0; }
+  .main { display: grid; grid-template-columns: 1fr minmax(190px, 230px) 1fr; gap: 10px; min-height: 0; }
   .pad { position: relative; background: radial-gradient(circle at 50% 50%, var(--panel2), var(--panel) 70%);
          border: 1px solid var(--line); border-radius: 18px; display: grid; place-items: center; min-height: 0;
          overflow: hidden; }
@@ -65,14 +65,14 @@
   .arrows { position: absolute; inset: 0; pointer-events: none; color: var(--muted); font-size: 18px; }
   .arrows span { position: absolute; }
 
-  .center { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+  .center { display: flex; flex-direction: column; justify-content: center; gap: 8px; min-height: 0; min-width: 0; overflow-x: hidden; overflow-y: auto; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px; }
   .card h3 { margin: 0 0 6px; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .6px; }
   .speed { display: flex; align-items: center; gap: 10px; }
-  .speed input { flex: 1; accent-color: var(--accent); height: 28px; }
-  .speed b { min-width: 74px; text-align: right; font-variant-numeric: tabular-nums; }
-  .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; overflow: auto; }
-  .actions button { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 6px;
+  .speed input { flex: 1; min-width: 0; accent-color: var(--accent); height: 28px; }
+  .speed b { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+  .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .actions button { min-width: 0; white-space: nowrap; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 6px;
                     display: flex; align-items: center; justify-content: center; gap: 6px; }
   .actions button:active, .actions button.flash { background: var(--accent); border-color: var(--accent); }
   .tele { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; font-variant-numeric: tabular-nums; font-size: 13px; }
@@ -104,7 +104,6 @@
     .conn { order: 5; }
     .main { grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr; }
     .center { grid-column: 1 / -1; grid-row: 1; }
-    .center .card { flex: none !important; }
     #padMove, #padTurn { grid-row: 2; }
   }
   @media (max-height: 380px) { .card { padding: 6px 8px; } .actions button { padding: 7px 4px; } }
@@ -136,7 +135,7 @@
         <h3>Velocidad</h3>
         <div class="speed"><input type="range" id="speed" min="10" max="100" step="5" value="50"><b id="speedTxt"></b></div>
       </div>
-      <div class="card" style="flex:1; min-height:0; display:flex; flex-direction:column;">
+      <div class="card">
         <h3>Acciones de los brazos</h3>
         <div class="actions" id="actions"></div>
       </div>
