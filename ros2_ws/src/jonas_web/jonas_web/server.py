@@ -60,6 +60,9 @@ class MockBackend:
     def publish_cmd(self, vx, vy, wz):
         self.manual_cmd = (vx, vy, wz)
 
+    def publish_quiet(self, topic, text):
+        pass
+
     def publish(self, topic, text):
         print(f"{topic}  '{text}'", flush=True)
         if topic == "/jonas/mode":
@@ -149,8 +152,11 @@ class RosBackend:
         self.pub_cmd.publish(m)
 
     def publish(self, topic, text):
-        self.pubs[topic].publish(self.String(data=text))
+        self.publish_quiet(topic, text)
         self.node.get_logger().info(f"{topic}: {text}")
+
+    def publish_quiet(self, topic, text):
+        self.pubs[topic].publish(self.String(data=text))
 
     def shutdown(self):
         self.node.destroy_node()
@@ -242,8 +248,12 @@ class Robot:
                 "snapshot": self.b.snapshot is not None}
 
     async def state_loop(self):
+        k = 0
         while True:
             await asyncio.sleep(0.2)
+            k += 1
+            if k % 5 == 0:                                # cada 1 s: repetir el modo (si otro nodo se reinicia, se entera)
+                self.b.publish_quiet("/jonas/mode", self.mode)
             if self.clients:
                 data = json.dumps(self.state())
                 await asyncio.gather(*(ws.send_str(data) for ws in list(self.clients)), return_exceptions=True)
