@@ -16,7 +16,8 @@ import pygame
 from pygame import gfxdraw
 
 W, H = 960, 540            # resolución interna; SDL la escala a la pantalla (pygame.SCALED)
-BG = (6, 8, 14)            # "visor" casi negro
+BG = (6, 8, 14)
+FPS = 30                   # suficiente para una animación suave; 60 duplica el uso de CPU            # "visor" casi negro
 
 # Parámetros por expresión.
 #  open:  apertura del párpado superior (1 = abierto)
@@ -152,10 +153,9 @@ class Face:
         gx, gy = self.gaze
         icx, icy = int(cx), int(cy)
 
-        # halo
-        for i in range(10, 0, -1):
-            r = int(R * (1 + 0.035 * i))
-            gfxdraw.filled_circle(surf, icx, icy, r, (*col, int(10 + 3 * (10 - i))))
+        # halo (pre-renderizado y guardado en caché: dibujarlo cada cuadro consume mucha CPU en la Raspi)
+        halo = self._halo(int(R), tuple(int(c) // 4 * 4 for c in col))
+        surf.blit(halo, (icx - halo.get_width() // 2, icy - halo.get_height() // 2))
         # anillo exterior brillante + fondo oscuro
         self._circle(surf, icx, icy, R, col)
         self._circle(surf, icx, icy, R * 0.88, _shade(col, 0.16))
@@ -189,6 +189,23 @@ class Face:
             Rb = R * 1.5
             top_b = cy + R * 1.25 - p["lower"] * R * 1.35
             self._circle(surf, cx, top_b + Rb, Rb, BG)
+
+    _halo_cache = {}
+
+    @classmethod
+    def _halo(cls, r, col):
+        key = (r, col)
+        h = cls._halo_cache.get(key)
+        if h is None:
+            if len(cls._halo_cache) > 200:
+                cls._halo_cache.clear()
+            size = int(r * 1.36) * 2 + 4
+            h = pygame.Surface((size, size), pygame.SRCALPHA)
+            c = size // 2
+            for i in range(10, 0, -1):
+                gfxdraw.filled_circle(h, c, c, int(r * (1 + 0.035 * i)), (*col, int(10 + 3 * (10 - i))))
+            cls._halo_cache[key] = h
+        return h
 
     @staticmethod
     def _circle(surf, x, y, r, color):
@@ -254,7 +271,7 @@ def main():
     clock = pygame.time.Clock()
     running = True
     while running:
-        dt = clock.tick(60) / 1000
+        dt = clock.tick(FPS) / 1000
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 running = False

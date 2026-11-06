@@ -19,7 +19,7 @@ from geometry_msgs.msg import Point
 from rclpy.node import Node
 from std_msgs.msg import String
 
-from jonas_face.eyes import Face, handle_key, open_window
+from jonas_face.eyes import FPS, Face, handle_key, open_window
 
 
 class FaceNode(Node):
@@ -52,7 +52,7 @@ def main():
     running = True
     try:
         while running and rclpy.ok():
-            dt = clock.tick(60) / 1000
+            dt = clock.tick(FPS) / 1000
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     running = False
