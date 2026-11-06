@@ -88,7 +88,7 @@ class MockBackend:
         o = self.beh.update(dt, a, r, face_size=fs, face_age=time.monotonic() - self.face_t)
         if self.mode == "auto":
             cmd = (o.vx, o.vy, o.wz)
-            if self.beh.running and o.emotion != self.emotion:
+            if o.emotion != self.emotion:
                 self.publish("/jonas/face/expression", o.emotion)
             if o.action:
                 self.publish("/jonas/arms/action", o.action)

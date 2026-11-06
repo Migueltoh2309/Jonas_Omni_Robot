@@ -129,8 +129,17 @@ class AutoBehavior:
             self.face_seen_t = self.t
 
         if not self.running:
+            # en pausa no se mueve, pero la cara sigue reaccionando a lo que pasa alrededor
             self._set(PAUSA)
-            out.state, out.emotion = PAUSA, "neutral"
+            out.state = PAUSA
+            if out.nearest < 0.35:
+                out.emotion = "preocupado"
+            elif face_now and face_size >= p.face_close:
+                out.emotion = "feliz"
+            elif self.t - self.face_seen_t > p.bored_after:
+                out.emotion = "aburrido"
+            else:
+                out.emotion = "neutral"
             return out
 
         free = self.free_distance(a, r) if r.size else np.full(self.cand.size, 10.0)

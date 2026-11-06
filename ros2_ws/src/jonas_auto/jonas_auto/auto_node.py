@@ -79,6 +79,7 @@ class AutoNode(Node):
         if m.data != self.mode:
             self.mode = m.data
             self.b.set_running(False)                 # al cambiar de modo, siempre en pausa
+            self.last_emotion = ""
             self.stop()
             self.get_logger().info(f"modo: {self.mode}")
 
@@ -112,14 +113,14 @@ class AutoNode(Node):
         a, r = self.scan
         o = self.b.update(self.dt, a, r, face_size=self.face_size, face_age=now - self.face_t)
         self.out = o
+        if o.emotion != self.last_emotion:          # en modo auto la emoción la decide el robot (en marcha o en pausa)
+            self.pub_emo.publish(String(data=o.emotion))
+            self.last_emotion = o.emotion
         if self.b.running:
             t = Twist()
             t.linear.x, t.linear.y, t.angular.z = o.vx, o.vy, o.wz
             self.pub_cmd.publish(t)
             self.was_moving = True
-            if o.emotion != self.last_emotion:
-                self.pub_emo.publish(String(data=o.emotion))
-                self.last_emotion = o.emotion
             if o.action:
                 self.pub_act.publish(String(data=o.action))
         elif self.was_moving:
