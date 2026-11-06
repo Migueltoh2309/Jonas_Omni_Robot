@@ -39,7 +39,7 @@ class FaceTracker(Node):
         model = P("model", os.path.join(share, "models", "face_detection_yunet_2023mar.onnx")).value
         self.score_threshold = P("score_threshold", 0.7).value
         self.min_face = P("min_face", 18).value        # px (en la imagen de detección): ignora caras muy lejanas
-        self.mirror = P("mirror", False).value         # invierte x si los ojos miran al lado contrario
+        self.mirror = P("mirror", True).value          # true: con la cámara mirando al frente, como la pantalla
         self.gain_x = P("gain_x", 1.0).value
         self.gain_y = P("gain_y", 1.0).value
         self.lost_timeout = P("lost_timeout", 1.0).value

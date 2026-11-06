@@ -164,12 +164,13 @@ class Face:
         self._circle(surf, icx, icy, R * 0.88, _shade(col, 0.16))
 
         # iris (se desplaza con la mirada)
-        px = cx + gx * R * 0.22
-        py = cy - gy * R * 0.22
+        m = max(1.0, math.hypot(gx, gy))     # en diagonal no debe salirse del ojo
+        px = cx + gx / m * R * 0.40          # iris chico = se mueve más dentro del ojo y se nota a dónde mira
+        py = cy - gy / m * R * 0.40
         if p["dizzy"] > 0.5:
             self._spiral(surf, px, py, R * 0.62, side, col)
         else:
-            ir = R * 0.60 * p["pupil"]
+            ir = R * 0.40 * p["pupil"]
             self._circle(surf, px, py, ir, _shade(col, 0.75))
             self._circle(surf, px, py, ir * 0.80, _shade(col, 0.42))
             self._circle(surf, px, py, ir * 0.50, _shade(col, 0.20))
