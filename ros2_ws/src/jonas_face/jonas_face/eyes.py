@@ -133,13 +133,13 @@ class Face:
         surf.fill(BG)
         p = self.p
         breathe = 1 + 0.012 * math.sin(self.t * 1.6)
-        R = H * 0.215 * p["scale"] * breathe
+        R = H * 0.26 * p["scale"] * breathe
         bob = p["bounce"] * abs(math.sin(self.t * 4.5)) * -H * 0.025
         jx = p["jitter"] * math.sin(self.t * 53) * R * 0.025
         jy = p["jitter"] * math.cos(self.t * 47) * R * 0.02
         gx, gy = self.gaze
         for side in (-1, 1):                    # -1: ojo izquierdo (en pantalla), +1: derecho
-            cx = W / 2 + side * W * 0.205 + gx * W * 0.045 + jx
+            cx = W / 2 + side * W * 0.23 + gx * W * 0.045 + jx
             cy = H / 2 - gy * H * 0.05 + bob + jy
             if p["dizzy"] > 0.01:               # mareado: cada ojo da vueltas en sentido contrario
                 a = self.t * 3.0 * side
