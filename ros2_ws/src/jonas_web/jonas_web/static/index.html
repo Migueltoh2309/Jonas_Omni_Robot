@@ -74,16 +74,24 @@
   .card h3 { margin: 0 0 6px; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .6px; }
   .speed { display: flex; align-items: center; gap: 10px; }
   .speed h3 { margin: 0; }
-  .speed input { flex: 1; min-width: 0; accent-color: var(--cel); height: 26px; }
+  .speed input { flex: 1; min-width: 0; height: 30px; margin: 0; background: none; -webkit-appearance: none; appearance: none; }
+  .speed input::-webkit-slider-runnable-track { height: 12px; border-radius: 6px;
+      background: linear-gradient(to right, var(--cel) var(--p, 50%), #dbe6ec var(--p, 50%)); }
+  .speed input::-moz-range-track { height: 12px; border-radius: 6px; background: #dbe6ec; }
+  .speed input::-moz-range-progress { height: 12px; border-radius: 6px; background: var(--cel); }
+  .speed input::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; margin-top: -7px; border-radius: 50%;
+      background: #fff; border: 3px solid var(--cel-dark); box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+  .speed input::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: #fff;
+      border: 3px solid var(--cel-dark); box-shadow: 0 2px 6px rgba(0,0,0,.2); }
   .speed b { white-space: nowrap; font-variant-numeric: tabular-nums; }
   .actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .actions button { min-width: 0; white-space: nowrap; background: #fff; border: 1px solid var(--line); border-radius: 10px;
                     padding: 8px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 13px; }
   .actions button .i { font-size: 20px; line-height: 1; }
   .actions button:active, .actions button.flash { background: var(--cel); border-color: var(--cel); color: #fff; }
-  .tele { display: flex; gap: 14px; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted);
+  .tele { display: flex; gap: 18px; font-variant-numeric: tabular-nums; font-size: 16px; color: var(--muted);
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px; }
-  .tele b { color: var(--text); font-weight: 600; }
+  .tele b { color: var(--text); font-weight: 700; font-size: 18px; }
 
   /* ---------- lista de emociones ---------- */
   .sheet { position: fixed; inset: 0; background: rgba(10,10,10,.35); display: none; align-items: flex-start;
@@ -229,7 +237,11 @@ function buildActions(list) {
 
 // ---------- velocidad ----------
 function speed() { return $("speed").value / 100; }
-function updSpeed() { $("speedTxt").textContent = `${(maxLin * speed()).toFixed(2)} m/s`; }
+function updSpeed() {
+  const el = $("speed");
+  el.style.setProperty("--p", ((el.value - el.min) / (el.max - el.min) * 100) + "%");   // parte celeste del riel
+  $("speedTxt").textContent = `${(maxLin * speed()).toFixed(2)} m/s`;
+}
 $("speed").oninput = updSpeed;
 
 // ---------- joysticks (multitáctil; hay una copia para horizontal y otra para vertical) ----------
