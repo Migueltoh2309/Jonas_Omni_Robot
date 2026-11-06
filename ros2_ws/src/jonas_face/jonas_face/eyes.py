@@ -155,7 +155,7 @@ class Face:
 
         # halo (pre-renderizado y guardado en caché: dibujarlo cada cuadro consume mucha CPU en la Raspi)
         halo = self._halo(int(R), tuple(int(c) // 4 * 4 for c in col))
-        surf.blit(halo, (icx - halo.get_width() // 2, icy - halo.get_height() // 2))
+        surf.blit(halo, (icx - halo.get_width() // 2, icy - halo.get_height() // 2), special_flags=pygame.BLEND_ADD)
         # anillo exterior brillante + fondo oscuro
         self._circle(surf, icx, icy, R, col)
         self._circle(surf, icx, icy, R * 0.88, _shade(col, 0.16))
@@ -200,7 +200,9 @@ class Face:
             if len(cls._halo_cache) > 200:
                 cls._halo_cache.clear()
             size = int(r * 1.36) * 2 + 4
-            h = pygame.Surface((size, size), pygame.SRCALPHA)
+            # Fondo negro opaco + círculos semitransparentes; se suma a la pantalla con BLEND_ADD
+            # (lo negro no cambia nada, así que el cuadrado no se ve aunque se solape con el otro ojo).
+            h = pygame.Surface((size, size))
             c = size // 2
             for i in range(10, 0, -1):
                 gfxdraw.filled_circle(h, c, c, int(r * (1 + 0.035 * i)), (*col, int(10 + 3 * (10 - i))))
