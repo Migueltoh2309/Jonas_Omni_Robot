@@ -8,5 +8,8 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", SYMLINK+="j
 
 # U2D2 (ROBOTIS, chip FTDI FT232H) para los Dynamixel MX-28AT de los brazos -> /dev/jonas_u2d2
 SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6014", SYMLINK+="jonas_u2d2", GROUP="dialout", MODE="0660"
+# RPLIDAR A1M8 (adaptador Silicon Labs CP2102) -> /dev/jonas_lidar
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="jonas_lidar", GROUP="dialout", MODE="0660"
+
 # Latencia del FTDI a 1 ms (por defecto 16 ms: hace muy lenta la comunicación con los Dynamixel)
 ACTION=="add", SUBSYSTEM=="usb-serial", DRIVER=="ftdi_sio", ATTR{latency_timer}="1"
