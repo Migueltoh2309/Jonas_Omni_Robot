@@ -48,12 +48,12 @@
   .stop:active { transform: scale(.96); }
 
   /* ---------- zona principal (horizontal): joystick | panel derecho ---------- */
-  .main { display: grid; grid-template-columns: auto 1fr; gap: 10px; min-height: 0; }
+  .main { display: grid; grid-template-columns: 33% 1fr; gap: 10px; min-height: 0; }
   .side { display: grid; grid-template-rows: minmax(90px, 1fr) auto auto auto; gap: 8px; min-height: 0; min-width: 0; }
 
   .pad { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
          display: grid; place-items: center; min-height: 0; min-width: 0; overflow: hidden; }
-  #padMove { aspect-ratio: 1; height: 100%; }
+  #padMove { height: 100%; }
   .pad .label { position: absolute; top: 6px; left: 10px; color: var(--muted); font-size: 12px; font-weight: 600;
                 text-transform: uppercase; letter-spacing: .6px; }
   .ring { position: relative; border-radius: 50%; border: 2px solid var(--line); background: #fff; }
@@ -68,7 +68,7 @@
   .ring.h .knob { height: 80%; width: auto; }
   .pad.active .knob { transition: none; }
   .pad.active .ring { border-color: var(--cel); background: var(--cel-soft); }
-  .hint { position: absolute; color: #b9c9d3; font-size: 13px; font-weight: 700; }
+  .hint { position: absolute; color: #9fb4c1; font-size: 18px; font-weight: 700; }
 
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px; min-width: 0; }
   .card h3 { margin: 0 0 6px; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .6px; }
@@ -142,7 +142,7 @@
 
     <div class="side">
       <div class="pad" id="padTurn"><div class="label">girar</div>
-        <span class="hint" style="left:14px">⟲</span><span class="hint" style="right:14px">⟳</span>
+        <span class="hint" style="left:8px">⟲</span><span class="hint" style="right:8px">⟳</span>
         <div class="ring h" data-stick="turn"><div class="knob"></div></div></div>
       <div class="card speed"><h3>Velocidad</h3><input type="range" id="speed" min="10" max="100" step="5" value="50"><b id="speedTxt"></b></div>
       <div class="card"><h3>Acciones de los brazos</h3><div class="actions" id="actions"></div></div>
@@ -264,7 +264,7 @@ function sizeRings() {   // cada joystick ocupa lo que permita su panel
   document.querySelectorAll(".ring").forEach(ring => {
     const pad = ring.parentElement;
     const w = pad.clientWidth - 20, h = pad.clientHeight - 30;
-    if (ring.classList.contains("h")) { const s = Math.min(w * 0.82, 420); ring.style.width = s + "px"; ring.style.height = Math.min(s * 0.3, h) + "px"; }
+    if (ring.classList.contains("h")) { const s = Math.min(w * 0.9, 520); ring.style.width = s + "px"; ring.style.height = Math.min(s * 0.36, h) + "px"; }
     else { const s = Math.max(60, Math.min(w, h)); ring.style.width = s + "px"; ring.style.height = s + "px"; }
   });
 }
