@@ -1,0 +1,91 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Reference Frame: odom
+      Cell Size: 0.5
+      Plane Cell Count: 20
+      Offset: {X: 3, Y: 2, Z: 0}
+      Color: 160; 160; 164
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Mundo simulado
+      Enabled: true
+      Topic:
+        Value: /jonas/sim/world
+        Depth: 1
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
+      Value: true
+    - Class: rviz_default_plugins/LaserScan
+      Name: Lidar
+      Enabled: true
+      Topic:
+        Value: /scan
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Best Effort
+      Style: Flat Squares
+      Size (m): 0.04
+      Color Transformer: FlatColor
+      Color: 229; 51; 42
+      Decay Time: 0
+      Value: true
+    - Class: rviz_default_plugins/Odometry
+      Name: Recorrido
+      Enabled: true
+      Topic:
+        Value: /odom
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
+      Keep: 200
+      Position Tolerance: 0.05
+      Angle Tolerance: 0.2
+      Shape:
+        Value: Arrow
+        Color: 51; 185; 234
+        Shaft Length: 0.25
+        Shaft Radius: 0.02
+        Head Length: 0.08
+        Head Radius: 0.05
+        Alpha: 1
+      Covariance:
+        Value: false
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: true
+      Show Names: true
+      Marker Scale: 0.4
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 30; 30; 30
+    Fixed Frame: odom
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Name: Current View
+      Scale: 120
+      X: 3
+      Y: 2
+      Angle: 0
+      Target Frame: <Fixed Frame>
+      Value: TopDownOrtho (rviz_default_plugins)
+    Saved: ~
+Window Geometry:
+  Height: 800
+  Width: 1100

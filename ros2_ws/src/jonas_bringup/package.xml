@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>jonas_bringup</name>
+  <version>0.1.0</version>
+  <description>Launch files de Jonas: robot real (Raspi) y simulación (laptop/Docker)</description>
+  <maintainer email="molortegui@utec.edu.pe">MiTo Olortegui Huaman</maintainer>
+  <license>MIT</license>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>jonas_auto</exec_depend>
+  <exec_depend>jonas_web</exec_depend>
+  <exec_depend>jonas_face</exec_depend>
+  <exec_depend>jonas_vision</exec_depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

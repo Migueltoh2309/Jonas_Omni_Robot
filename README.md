@@ -45,9 +45,12 @@
 │   ├── tools/flash_via_pi.sh       compila en la laptop y flashea a través de la Raspi
 │   ├── tools/step_test.sh          prueba de escalones del PI + análisis
 │   └── README.md                   detalles del firmware
+├── ros2_ws/src/                    Paquetes ROS 2: jonas_face, jonas_vision, jonas_auto, jonas_web, jonas_bringup
+├── docker/                         ROS 2 Jazzy en la laptop: simulación y RViz del robot real
 └── raspi/
-    ├── 99-jonas.rules              regla udev: /dev/jonas_esp32
-    └── run_agent.sh                lanza el micro-ROS Agent
+    ├── 99-jonas.rules              reglas udev: /dev/jonas_esp32, /dev/jonas_u2d2, /dev/jonas_lidar
+    ├── run_agent.sh                lanza el micro-ROS Agent (reinicia el ESP32 antes)
+    └── run_lidar.sh                lanza el RPLIDAR en /dev/jonas_lidar
 ```
 
 ---
@@ -170,6 +173,23 @@ cd ~/jonas/firmware/jonas_firmware
 ```
 
 **Para flashear con el ESP32 conectado a la Raspi**, ver [Flasheo remoto](#4-reprogramar-el-esp32-dentro-del-robot-flasheo-remoto).
+
+#### 1.4 Docker: ROS 2 Jazzy en la laptop (simulación y RViz)
+
+La laptop tiene Ubuntu 22.04 / Humble y la Raspi Jazzy (no se entienden bien por DDS). El contenedor
+trae Jazzy + RViz (~430 MB, sin Gazebo) y compila `ros2_ws/src` al arrancar.
+
+```bash
+sudo apt install -y docker.io docker-compose-v2 && sudo usermod -aG docker $USER   # y cerrar sesión
+cd docker
+docker compose build                 # una vez
+docker compose up sim                # Jonas simulado: RViz + cara + app en http://localhost:8080
+docker compose run --rm estacion     # RViz conectado al Jonas real por WiFi (ROS_DOMAIN_ID=7)
+docker compose run --rm shell        # terminal con ROS Jazzy
+docker compose down                  # apagar
+```
+
+La simulación usa `ROS_DOMAIN_ID=42` y solo localhost, así que no interfiere con el robot real.
 
 ### 2. Raspberry Pi 5 (Ubuntu 24.04 MATE)
 

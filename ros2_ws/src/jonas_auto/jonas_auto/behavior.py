@@ -58,7 +58,7 @@ class AutoBehavior:
         self.t = 0.0
         self.next_wander = 0.0
         self.state_t = 0.0
-        self.face_seen_t = -1e9
+        self.face_seen_t = 0.0          # "aburrido" cuenta desde que arranca, no desde siempre
         self.interact_end_t = -1e9
         self.greeted = False
         self.turn_hist = []              # para detectar "mareado"

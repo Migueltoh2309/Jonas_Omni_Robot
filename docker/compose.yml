@@ -1,0 +1,56 @@
+# Uso (desde la carpeta docker/):
+#   docker compose build                 # una vez (~1.5 GB)
+#   docker compose up sim                # Jonas simulado: RViz + cara + app web en http://localhost:8080
+#   docker compose run --rm estacion     # RViz conectado al Jonas REAL por WiFi (ROS_DOMAIN_ID=7)
+#   docker compose run --rm shell        # terminal con ROS Jazzy (ros2 topic list, etc.)
+x-jonas: &jonas
+  image: jonas:jazzy
+  pull_policy: never          # la imagen se construye aquí (servicio sim), no se descarga
+  network_mode: host          # DDS y la app web sin mapear puertos
+  ipc: host                   # memoria compartida de DDS
+  devices: ["/dev/dri:/dev/dri"]
+  environment: &env
+    DISPLAY: ${DISPLAY:-:0}
+    QT_X11_NO_MITSHM: "1"
+    XAUTHORITY: /tmp/.Xauthority
+    PYTHONUNBUFFERED: "1"
+    SDL_AUDIODRIVER: dummy      # la cara no usa sonido (evita errores de ALSA)
+  volumes:
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    - ${XAUTHORITY:-~/.Xauthority}:/tmp/.Xauthority:ro   # permiso para abrir ventanas (sin xhost)
+    - ../ros2_ws/src:/home/ubuntu/ws/src
+    - jonas_build:/home/ubuntu/ws/build
+    - jonas_install:/home/ubuntu/ws/install
+    - jonas_log:/home/ubuntu/ws/log
+
+services:
+  sim:
+    <<: *jonas
+    build: .
+    environment:
+      <<: *env
+      ROS_DOMAIN_ID: "42"                          # dominio distinto: no se mezcla con el robot real
+      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+    command: ros2 launch jonas_bringup sim.launch.py
+
+  estacion:
+    <<: *jonas
+    environment:
+      <<: *env
+      ROS_DOMAIN_ID: "7"
+      JONAS_BUILD: "0"
+    command: rviz2 -d /home/ubuntu/ws/install/jonas_bringup/share/jonas_bringup/rviz/jonas.rviz
+
+  shell:
+    <<: *jonas
+    environment:
+      <<: *env
+      ROS_DOMAIN_ID: "7"
+    stdin_open: true
+    tty: true
+    command: bash
+
+volumes:
+  jonas_build:
+  jonas_install:
+  jonas_log:

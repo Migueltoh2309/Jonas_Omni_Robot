@@ -16,5 +16,6 @@ setup(
     maintainer_email="molortegui@utec.edu.pe",
     description="Modo automático de Jonas",
     license="MIT",
-    entry_points={"console_scripts": ["auto = jonas_auto.auto_node:main", "sim = jonas_auto.sim:main"]},
+    entry_points={"console_scripts": ["auto = jonas_auto.auto_node:main", "sim = jonas_auto.sim:main",
+                                     "sim_node = jonas_auto.sim_node:main"]},
 )
