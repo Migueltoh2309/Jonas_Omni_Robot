@@ -3,13 +3,14 @@
 <package format="3">
   <name>jonas_web</name>
   <version>0.1.0</version>
-  <description>Interfaz web de Jonas para el celular (modo manual: joystick, emociones, acciones de los brazos).</description>
+  <description>Interfaz web de Jonas para el celular: modo manual (joystick, emociones, acciones) y modo automático (lidar, cámara, iniciar/pausa).</description>
   <maintainer email="molortegui@utec.edu.pe">MiTo Olortegui Huaman</maintainer>
   <license>MIT</license>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>python3-aiohttp</exec_depend>
 
   <export>

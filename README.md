@@ -338,6 +338,10 @@ Más detalles del firmware (PI, modelo del motor, sintonía): [`firmware/jonas_f
 - [x] Cara a resolución nativa de la pantalla oficial (800x480): ~15 % de un núcleo; visión: ~25 %
 - [x] Nodo **separado** de seguimiento de caras (`jonas_vision`, YuNet): publica `/jonas/face/look` y `/jonas/vision/faces`. Lanzar todo: `ros2 launch jonas_vision face_tracking.launch.py`
 - [ ] Arranque automático de la cara y la visión (systemd / autostart de MATE)
+- [x] App web para el celular (`jonas_web`): modo manual (joystick, giro, velocidad, emociones, acciones) y pestaña Auto (lidar, cámara, iniciar/pausa). Probar sin robot: `python3 -m jonas_web.server --mock`
+- [x] Modo automático nivel 1 (`jonas_auto`): explora, esquiva con el lidar (pasillo del ancho del robot + freno de seguridad) y se detiene a saludar a quien se acerca. Simulador: `python3 -m jonas_auto.sim --png recorrido.png`
+- [ ] Probar `jonas_auto` en el robot real (necesita `jonas_base`; calibrar `lidar_yaw` según cómo esté montado el lidar)
+- [ ] Nivel 2: SLAM (`slam_toolbox`) + Nav2 para ir a puntos de un mapa
 - [ ] Manos: 2x XC330-M181-T (5 V)
 - [ ] IMU, cámara, lidar
 - [ ] Navigation 2

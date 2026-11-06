@@ -1,29 +1,30 @@
 #!/usr/bin/env python3
-"""Interfaz web de Jonas (modo manual): sirve la app para el celular y la conecta con ROS 2.
+"""Interfaz web de Jonas: sirve la app para el celular y la conecta con ROS 2.
 
     ros2 run jonas_web server                 # en la Raspi → abrir http://<ip-de-la-raspi>:8080 en el celular
-    python3 -m jonas_web.server --mock        # sin ROS (laptop): muestra en consola lo que se publicaría
+    python3 -m jonas_web.server --mock        # sin ROS (laptop): robot simulado en una sala virtual
 
 El celular habla con este nodo por WebSocket (/ws, mensajes JSON):
     celular → robot: {"t":"cmd","vx":-1..1,"vy":-1..1,"wz":-1..1,"speed":0..1}   (~20 Hz mientras se usa el joystick)
-                     {"t":"stop"}  {"t":"emotion","name":..}  {"t":"action","name":..}  {"t":"mode","name":..}
+                     {"t":"stop"}  {"t":"emotion","name":..}  {"t":"action","name":..}  {"t":"mode","name":"manual|auto"}
+                     {"t":"auto","run":true|false}  {"t":"auto","max_speed":0.15}
     robot → celular: {"t":"hello",...} al conectar y {"t":"state",...} 5 veces por segundo
+La foto de la cámara (modo auto) se pide aparte: GET /snapshot.jpg
 
-Publica:
-    /cmd_vel               geometry_msgs/Twist   x adelante, y izquierda (m/s), z giro antihorario (rad/s)
-    /jonas/face/expression std_msgs/String
-    /jonas/arms/action     std_msgs/String       (lo consumirá jonas_arms)
-    /jonas/mode            std_msgs/String       manual | auto
-Lee: /jonas/vision/faces (std_msgs/Int32), /jonas/status (std_msgs/String)
+Publica: /cmd_vel (solo en modo manual), /jonas/face/expression, /jonas/arms/action, /jonas/mode, /jonas/auto/cmd
+Lee:     /jonas/vision/faces, /jonas/status, /jonas/auto/state, /jonas/vision/snapshot, /jonas/face/expression
 
-Seguridad: los comandos valen `cmd_timeout` s (0.5). Si el celular deja de mandar (soltó el joystick, se cortó el Wi-Fi,
-se bloqueó la pantalla), el robot se detiene. Las velocidades se limitan a max_linear / max_angular.
+Seguridad (modo manual): los comandos valen `cmd_timeout` s (0.5). Si el celular deja de mandar (soltó el joystick,
+se cortó el Wi-Fi, se bloqueó la pantalla), el robot se detiene. En modo auto el robot sigue solo (con su propia
+protección de obstáculos); STOP lo pone en pausa.
 """
 import argparse
 import asyncio
 import json
+import math
 import os
 import socket
+import sys
 import threading
 import time
 
@@ -39,20 +40,71 @@ STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 # Backends: ROS 2 o simulado (para probar la app sin robot)
 # --------------------------------------------------------------------------------------------------
 class MockBackend:
+    """Sin ROS: un robot simulado en una sala (jonas_auto.sim) que se mueve con el joystick o en modo auto."""
+
     def __init__(self, cfg):
         self.cfg = cfg
-        self.faces = 0
-        self.status = "simulado (sin ROS)"
-        self._last = None
+        self.faces, self.status = 0, "simulado (sin ROS)"
+        self.emotion, self.auto_state, self.snapshot = None, None, None
+        self.mode, self.manual_cmd = "manual", (0.0, 0.0, 0.0)
+        try:
+            sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "jonas_auto"))
+            from jonas_auto.behavior import AutoBehavior
+            from jonas_auto.sim import SimWorld
+            self.world, self.beh = SimWorld(), AutoBehavior()
+        except ImportError as e:
+            print("Aviso: sin simulador (", e, ")", flush=True)
+            self.world = None
+        self.face_t = -1e9
 
     def publish_cmd(self, vx, vy, wz):
-        cur = (round(vx, 2), round(vy, 2), round(wz, 2))
-        if cur != self._last:
-            print(f"/cmd_vel  vx={vx:+.2f} m/s  vy={vy:+.2f} m/s  wz={wz:+.2f} rad/s", flush=True)
-            self._last = cur
+        self.manual_cmd = (vx, vy, wz)
 
     def publish(self, topic, text):
         print(f"{topic}  '{text}'", flush=True)
+        if topic == "/jonas/mode":
+            self.mode = text
+            if self.world:
+                self.beh.set_running(False)
+        elif topic == "/jonas/face/expression":
+            self.emotion = text
+        elif topic == "/jonas/auto/cmd" and self.world:
+            c = json.loads(text)
+            if "max_speed" in c:
+                self.beh.p.max_speed = float(c["max_speed"])
+            if "run" in c and self.mode == "auto":
+                self.beh.set_running(c["run"])
+
+    def tick(self, dt):
+        """Avanza la simulación (lo llama el servidor a 10 Hz)."""
+        if not self.world:
+            return
+        w = self.world
+        a, r = w.scan()
+        fs = w.face()
+        if fs > 0:
+            self.face_t = time.monotonic()
+        self.faces = 1 if fs > 0 else 0
+        o = self.beh.update(dt, a, r, face_size=fs, face_age=time.monotonic() - self.face_t)
+        if self.mode == "auto":
+            cmd = (o.vx, o.vy, o.wz)
+            if self.beh.running and o.emotion != self.emotion:
+                self.publish("/jonas/face/expression", o.emotion)
+            if o.action:
+                self.publish("/jonas/arms/action", o.action)
+        else:
+            cmd = self.manual_cmd
+        w.step(*cmd, dt)
+        bins = [math.inf] * 72
+        for ang, d in zip(a, r):
+            i = int(((ang + math.pi) % (2 * math.pi)) / (2 * math.pi) * 72) % 72
+            bins[i] = min(bins[i], d)
+        self.auto_state = {"mode": self.mode, "running": self.beh.running, "max_speed": self.beh.p.max_speed,
+                           "state": o.state, "nearest": round(o.nearest, 2) if math.isfinite(o.nearest) else None,
+                           "heading": round(o.heading, 2), "free": round(o.free, 2), "emotion": o.emotion,
+                           "cmd": [round(v, 2) for v in cmd], "robot_radius": self.beh.p.robot_radius,
+                           "stop_dist": self.beh.p.stop_dist,
+                           "scan": [round(v, 2) if math.isfinite(v) else None for v in bins]}
 
     def shutdown(self):
         pass
@@ -63,24 +115,33 @@ class RosBackend:
         import rclpy
         from geometry_msgs.msg import Twist
         from rclpy.node import Node
+        from sensor_msgs.msg import CompressedImage
         from std_msgs.msg import Int32, String
 
         self.rclpy, self.Twist, self.String = rclpy, Twist, String
         rclpy.init()
         self.node = Node("jonas_web")
         P = self.node.declare_parameter
-        cfg["port"] = P("port", cfg["port"]).value
-        cfg["max_linear"] = P("max_linear", cfg["max_linear"]).value
-        cfg["max_angular"] = P("max_angular", cfg["max_angular"]).value
-        cfg["cmd_timeout"] = P("cmd_timeout", cfg["cmd_timeout"]).value
+        for k in ("port", "max_linear", "max_angular", "cmd_timeout"):
+            cfg[k] = P(k, cfg[k]).value
         self.pub_cmd = self.node.create_publisher(Twist, "/cmd_vel", 10)
         self.pubs = {t: self.node.create_publisher(String, t, 10)
-                     for t in ("/jonas/face/expression", "/jonas/arms/action", "/jonas/mode")}
-        self.faces = 0
-        self.status = ""
-        self.node.create_subscription(Int32, "/jonas/vision/faces", lambda m: setattr(self, "faces", m.data), 10)
-        self.node.create_subscription(String, "/jonas/status", lambda m: setattr(self, "status", m.data), 10)
+                     for t in ("/jonas/face/expression", "/jonas/arms/action", "/jonas/mode", "/jonas/auto/cmd")}
+        self.faces, self.status = 0, ""
+        self.emotion, self.auto_state, self.snapshot = None, None, None
+        sub = self.node.create_subscription
+        sub(Int32, "/jonas/vision/faces", lambda m: setattr(self, "faces", m.data), 10)
+        sub(String, "/jonas/status", lambda m: setattr(self, "status", m.data), 10)
+        sub(String, "/jonas/face/expression", lambda m: setattr(self, "emotion", m.data), 10)
+        sub(String, "/jonas/auto/state", self._on_auto_state, 10)
+        sub(CompressedImage, "/jonas/vision/snapshot", lambda m: setattr(self, "snapshot", bytes(m.data)), 1)
         threading.Thread(target=rclpy.spin, args=(self.node,), daemon=True).start()
+
+    def _on_auto_state(self, m):
+        try:
+            self.auto_state = json.loads(m.data)
+        except ValueError:
+            pass
 
     def publish_cmd(self, vx, vy, wz):
         m = self.Twist()
@@ -130,32 +191,55 @@ class Robot:
         elif t == "action" and msg.get("name") in ACTIONS:
             self.last_action = msg["name"]
             self.b.publish("/jonas/arms/action", self.last_action)
-        elif t == "mode" and msg.get("name") in ("manual", "auto"):
+        elif t == "mode" and msg.get("name") in ("manual", "auto") and msg["name"] != self.mode:
             self.stop()
             self.mode = msg["name"]
             self.b.publish("/jonas/mode", self.mode)
+        elif t == "auto" and self.mode == "auto":
+            c = {}
+            if "run" in msg:
+                c["run"] = bool(msg["run"])
+            if "max_speed" in msg:
+                c["max_speed"] = _clip(float(msg["max_speed"]), 0.03, 0.30)
+            if c:
+                self.b.publish("/jonas/auto/cmd", json.dumps(c))
 
     def stop(self):
+        """STOP: en manual frena; en auto pone el modo automático en pausa."""
+        if self.mode == "auto":
+            self.b.publish("/jonas/auto/cmd", json.dumps({"run": False}))
         self.cmd, self.cmd_t = (0.0, 0.0, 0.0), 0.0
         self.b.publish_cmd(0.0, 0.0, 0.0)
         self.moving = False
 
     async def control_loop(self):
-        """Publica /cmd_vel a 20 Hz mientras haya comandos frescos; si caducan, frena una vez."""
+        """Modo manual: publica /cmd_vel a 20 Hz mientras haya comandos frescos; si caducan, frena una vez."""
+        k = 0
         while True:
             await asyncio.sleep(0.05)
+            k += 1
+            if k % 2 == 0 and hasattr(self.b, "tick"):
+                self.b.tick(0.1)                          # simulador (solo en --mock)
+            if self.mode != "manual":
+                continue
             fresh = time.monotonic() - self.cmd_t < self.cfg["cmd_timeout"]
-            if fresh and self.mode == "manual":
+            if fresh:
                 self.b.publish_cmd(*self.cmd)
                 self.moving = any(abs(v) > 1e-3 for v in self.cmd)
             elif self.moving or self.cmd_t:
                 self.stop()
 
     def state(self):
+        if self.b.emotion:
+            self.emotion = self.b.emotion                 # la emoción real (también la cambia el modo auto)
         vx, vy, wz = self.cmd if self.moving else (0.0, 0.0, 0.0)
+        if self.mode == "auto" and self.b.auto_state:
+            vx, vy, wz = self.b.auto_state.get("cmd", [0, 0, 0])
         return {"t": "state", "mode": self.mode, "emotion": self.emotion, "action": self.last_action,
                 "cmd": [round(vx, 3), round(vy, 3), round(wz, 3)], "faces": self.b.faces,
-                "status": self.b.status, "clients": len(self.clients)}
+                "status": self.b.status, "clients": len(self.clients),
+                "auto": self.b.auto_state if self.mode == "auto" else None,
+                "snapshot": self.b.snapshot is not None}
 
     async def state_loop(self):
         while True:
@@ -176,13 +260,17 @@ def make_app(robot):
     async def index(_):
         return web.FileResponse(os.path.join(STATIC, "index.html"), headers={"Cache-Control": "no-cache"})
 
+    async def snapshot(_):
+        if robot.b.snapshot is None:
+            raise web.HTTPNotFound()
+        return web.Response(body=robot.b.snapshot, content_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
     async def ws_handler(request):
         ws = web.WebSocketResponse(heartbeat=2.0)
         await ws.prepare(request)
         robot.clients.add(ws)
-        await ws.send_str(json.dumps({"t": "hello", "emotions": EMOTIONS, "actions": ACTIONS,
-                                      "max_linear": robot.cfg["max_linear"],
-                                      "max_angular": robot.cfg["max_angular"], **robot.state()}))
+        await ws.send_str(json.dumps({**robot.state(), "t": "hello", "emotions": EMOTIONS, "actions": ACTIONS,
+                                      "max_linear": robot.cfg["max_linear"], "max_angular": robot.cfg["max_angular"]}))
         try:
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
@@ -192,8 +280,8 @@ def make_app(robot):
                         pass
         finally:
             robot.clients.discard(ws)
-            if not robot.clients:
-                robot.stop()                    # se fue el último celular: frenar
+            if not robot.clients and robot.mode == "manual":
+                robot.stop()                    # se fue el último celular: frenar (en auto sigue solo)
         return ws
 
     async def start_loops(app):
@@ -202,6 +290,7 @@ def make_app(robot):
     app = web.Application()
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
+    app.router.add_get("/snapshot.jpg", snapshot)
     app.router.add_static("/static", STATIC)
     app.on_startup.append(start_loops)
     return app
@@ -221,7 +310,7 @@ def local_ips():
 
 def main():
     ap = argparse.ArgumentParser(description="Interfaz web de Jonas")
-    ap.add_argument("--mock", action="store_true", help="sin ROS: imprime lo que se publicaría")
+    ap.add_argument("--mock", action="store_true", help="sin ROS: robot simulado")
     ap.add_argument("--port", type=int, default=8080)
     args, _ = ap.parse_known_args()             # ignora --ros-args cuando se lanza con ros2 run
 

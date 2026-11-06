@@ -5,6 +5,7 @@ Publica:
     /jonas/face/look       geometry_msgs/Point   x, y en [-1, 1] (x: derecha de la pantalla, y: arriba);
                                                  solo mientras sigue a alguien (la cara vuelve a mirar al azar sola)
     /jonas/vision/faces    std_msgs/Int32        cuántas caras ve (1 Hz y cuando cambia)
+    /jonas/vision/snapshot sensor_msgs/CompressedImage  foto JPEG 320x240 con las caras marcadas, 1/s, solo si alguien la pide
 
 Con mucha gente: sigue a la cara más grande (la más cercana), se queda con esa persona aunque aparezcan otras,
 la suelta si desaparece más de `lost_timeout` s, y cada `switch_min`–`switch_max` s mira a otra persona.
@@ -22,6 +23,7 @@ import rclpy
 from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import Point
 from rclpy.node import Node
+from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import Int32
 
 from jonas_vision.yunet import YuNet
@@ -47,10 +49,13 @@ class FaceTracker(Node):
         self.switch_max = P("switch_max", 10.0).value
         self.smoothing = P("smoothing", 0.5).value     # 0 = sin suavizado, 0.9 = muy suave
         self.debug = P("debug", False).value
+        self.snapshot_rate = float(P("snapshot_rate", 1.0).value)   # fotos/s para la app (0 = no)
 
         self.detector = YuNet(model, (self.width, self.height), self.score_threshold)
         self.pub_look = self.create_publisher(Point, "/jonas/face/look", 10)
         self.pub_count = self.create_publisher(Int32, "/jonas/vision/faces", 10)
+        self.pub_snap = self.create_publisher(CompressedImage, "/jonas/vision/snapshot", 1)
+        self.last_snap = 0.0
 
         self.target = None          # (cx, cy, size) en px
         self.target_seen = 0.0
@@ -106,6 +111,10 @@ class FaceTracker(Node):
             if self.debug and now - self.last_debug > 1.0:
                 self.last_debug = now
                 self._save_debug(small, faces)
+            if self.snapshot_rate > 0 and now - self.last_snap > 1.0 / self.snapshot_rate \
+                    and self.pub_snap.get_subscription_count() > 0:    # solo si alguien la mira (la app)
+                self.last_snap = now
+                self._publish_snapshot(small, faces)
 
     # --- a quién mirar ---------------------------------------------------------------------------
     def _track(self, faces, now):
@@ -160,13 +169,27 @@ class FaceTracker(Node):
                                    f"{self.stats_ms / self.stats_n:.1f} ms cada una")
             self.stats_t, self.stats_n, self.stats_ms = time.time(), 0, 0.0
 
-    def _save_debug(self, img, faces):
+    def _annotate(self, img, faces):
         img = img.copy()
         for x, y, w, h, s in faces:
             cv2.rectangle(img, (int(x), int(y)), (int(x + w), int(y + h)), (0, 255, 0), 1)
         if self.target is not None:
             cv2.circle(img, (int(self.target[0]), int(self.target[1])), 5, (0, 0, 255), -1)
-        cv2.imwrite("/tmp/jonas_vision_debug.jpg", img)
+        return img
+
+    def _save_debug(self, img, faces):
+        cv2.imwrite("/tmp/jonas_vision_debug.jpg", self._annotate(img, faces))
+
+    def _publish_snapshot(self, img, faces):
+        """JPEG chico (320x240, ~10 KB) con las caras marcadas, para la pestaña Auto de la app."""
+        ok, jpg = cv2.imencode(".jpg", self._annotate(img, faces), [cv2.IMWRITE_JPEG_QUALITY, 60])
+        if ok:
+            m = CompressedImage()
+            m.header.stamp = self.get_clock().now().to_msg()
+            m.header.frame_id = "camera"
+            m.format = "jpeg"
+            m.data = jpg.tobytes()
+            self.pub_snap.publish(m)
 
     def destroy_node(self):
         self.running = False

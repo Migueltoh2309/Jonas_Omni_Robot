@@ -93,6 +93,27 @@
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px; }
   .tele b { color: var(--text); font-weight: 700; font-size: 18px; }
 
+  /* ---------- modo automático ---------- */
+  .autoview { display: none; grid-template-columns: 1fr 1fr; gap: 10px; min-height: 0; }
+  .app.auto .main { display: none; }
+  .app.auto .autoview { display: grid; }
+  .lidar canvas { width: 100%; height: 100%; display: block; }
+  .aside { display: grid; grid-template-rows: minmax(0, 1fr) auto auto auto; gap: 8px; min-height: 0; min-width: 0; }
+  .cam { position: relative; background: #0a0a0a; border-radius: 14px; overflow: hidden; min-height: 0;
+         display: grid; place-items: center; }
+  .cam img { width: 100%; height: 100%; object-fit: contain; display: none; }
+  .cam.on img { display: block; } .cam.on .nocam { display: none; }
+  .nocam { color: #9aa7b0; font-size: 13px; }
+  .info { display: flex; align-items: center; gap: 14px; font-size: 15px; color: var(--muted); flex-wrap: wrap; }
+  .info b { color: var(--text); font-size: 17px; }
+  .badge { background: var(--black); color: #fff; font-weight: 700; padding: 4px 10px; border-radius: 8px; font-size: 13px; }
+  .badge.EXPLORANDO { background: var(--cel); } .badge.ESQUIVANDO { background: #f59e0b; }
+  .badge.INTERACTUANDO { background: var(--ok); } .badge.BLOQUEADO, .badge.SIN.LIDAR { background: var(--bad); }
+  .runrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .runrow button { padding: 12px; border-radius: 12px; font-weight: 800; font-size: 16px; }
+  .go { background: var(--cel); color: #fff; } .pause { background: var(--black); color: #fff; }
+  .runrow button:disabled { opacity: .35; }
+
   /* ---------- lista de emociones ---------- */
   .sheet { position: fixed; inset: 0; background: rgba(10,10,10,.35); display: none; align-items: flex-start;
            justify-content: center; padding-top: 50px; z-index: 10; }
@@ -125,6 +146,12 @@
     .sticks .pad { aspect-ratio: auto; height: auto; }
   }
   .sticks { display: none; }
+  @media (orientation: portrait) {
+    .autoview { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+    .lidar { order: 2; min-height: 0; }
+    .aside { order: 1; grid-template-rows: auto auto auto auto; }
+    .cam { height: 27dvh; }
+  }
   @media (max-height: 360px) { .brand .name { display: none; } .actions button { padding: 5px 2px; } }
 </style>
 </head>
@@ -134,7 +161,7 @@
     <div class="brand"><img src="/static/utec.png" alt="UTEC"><span class="name">JONAS</span></div>
     <div class="modes" role="tablist">
       <button id="mManual" class="on">Manual</button>
-      <button id="mAuto" disabled>Auto <small>(pronto)</small></button>
+      <button id="mAuto">Auto</button>
     </div>
     <button class="emo-btn" id="emoBtn" aria-haspopup="listbox">
       <span class="e" id="emoIcon">😐</span><span id="emoName">neutral</span><span class="c">▾</span>
@@ -144,7 +171,7 @@
     <button class="stop" id="stopBtn">STOP</button>
   </div>
 
-  <div class="main">
+  <div class="main" id="manualView">
     <!-- horizontal: joystick grande a la izquierda -->
     <div class="pad" id="padMove"><div class="label">mover</div><div class="ring" data-stick="move"><div class="knob"></div></div></div>
 
@@ -161,6 +188,24 @@
         <div class="pad" id="padMoveP"><div class="label">mover</div><div class="ring" data-stick="move"><div class="knob"></div></div></div>
         <div class="pad" id="padTurnP"><div class="label">girar</div><div class="ring h" data-stick="turn"><div class="knob"></div></div></div>
       </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODO AUTOMÁTICO ===================== -->
+  <div class="autoview" id="autoView">
+    <div class="pad lidar"><div class="label">lidar</div><canvas id="lidar"></canvas></div>
+    <div class="aside">
+      <div class="cam"><img id="cam" alt=""><div class="nocam" id="nocam">sin imagen de la cámara</div></div>
+      <div class="card info">
+        <span class="badge" id="aState">EN PAUSA</span>
+        <span>más cerca <b id="aNear">–</b></span>
+        <span>👀 <b id="aFaces">0</b></span>
+      </div>
+      <div class="runrow">
+        <button class="go" id="aRun">▶ INICIAR</button>
+        <button class="pause" id="aPause">⏸ PAUSA</button>
+      </div>
+      <div class="card speed"><h3>Vel. máx</h3><input type="range" id="aSpeed" min="5" max="25" step="1" value="15"><b id="aSpeedTxt">0.15 m/s</b></div>
     </div>
   </div>
 </div>
@@ -199,6 +244,8 @@ function setConn(ok) {
 function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
 function showState(m) {
+  setMode(m.mode);
+  if (m.mode === "auto") showAuto(m);
   $("emoIcon").textContent = EMOJI[m.emotion] || "🙂";
   $("emoName").textContent = m.emotion;
   document.querySelectorAll("#emoList button").forEach(b => b.classList.toggle("on", b.dataset.name === m.emotion));
@@ -292,8 +339,91 @@ setInterval(() => {
 }, 50);
 
 $("stopBtn").onclick = () => { send({ t: "stop" }); toast("⛔ STOP"); };
-document.addEventListener("visibilitychange", () => { if (document.hidden) send({ t: "stop" }); });
-$("mAuto").onclick = () => toast("El modo automático llegará pronto");
+// pantalla bloqueada / app en segundo plano: en manual frena; en auto el robot sigue solo
+document.addEventListener("visibilitychange", () => { if (document.hidden && mode === "manual") send({ t: "stop" }); });
+// ---------- modos ----------
+var mode = "manual";
+function setMode(m) {
+  if (m === mode) return;
+  mode = m;
+  document.querySelector(".app").classList.toggle("auto", m === "auto");
+  $("mManual").classList.toggle("on", m === "manual"); $("mAuto").classList.toggle("on", m === "auto");
+  if (m === "auto") requestAnimationFrame(drawLidar); else sizeRings();
+}
+$("mManual").onclick = () => send({ t: "mode", name: "manual" });
+$("mAuto").onclick = () => send({ t: "mode", name: "auto" });
+
+// ---------- modo automático ----------
+let autoSt = null;
+function showAuto(m) {
+  autoSt = m.auto;
+  const a = m.auto || {};
+  const st = a.state || "SIN DATOS";
+  $("aState").textContent = st; $("aState").className = "badge " + st;
+  $("aNear").textContent = a.nearest == null ? "–" : `${a.nearest.toFixed(2)} m`;
+  $("aFaces").textContent = m.faces;
+  $("aRun").disabled = !!a.running; $("aPause").disabled = !a.running;
+  if (a.max_speed && document.activeElement !== $("aSpeed")) {
+    $("aSpeed").value = Math.round(a.max_speed * 100); $("aSpeedTxt").textContent = `${a.max_speed.toFixed(2)} m/s`;
+  }
+  drawLidar();
+}
+$("aRun").onclick = () => { send({ t: "auto", run: true }); toast("▶ modo automático en marcha"); };
+$("aPause").onclick = () => { send({ t: "auto", run: false }); toast("⏸ en pausa"); };
+$("aSpeed").oninput = () => { $("aSpeedTxt").textContent = `${($("aSpeed").value / 100).toFixed(2)} m/s`; };
+$("aSpeed").onchange = () => send({ t: "auto", max_speed: $("aSpeed").value / 100 });
+
+// cámara: una foto por segundo (solo en modo auto y con la pestaña visible)
+setInterval(() => {
+  if (mode !== "auto" || document.hidden) return;
+  const img = new Image();
+  img.onload = () => { $("cam").src = img.src; $("cam").parentElement.classList.add("on"); };
+  img.onerror = () => $("cam").parentElement.classList.remove("on");
+  img.src = "/snapshot.jpg?t=" + Date.now();
+}, 1000);
+
+// lidar: el robot al centro, arriba = adelante
+function drawLidar() {
+  const cv = $("lidar"); if (!cv || mode !== "auto") return;
+  const dpr = devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  if (!W || !H) return;
+  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const cx = W / 2, cy = H / 2 + 8, R = Math.min(W, H - 20) / 2 - 6, maxM = 3.0, k = R / maxM;
+  g.font = "11px system-ui"; g.textAlign = "left";
+  for (let m = 1; m <= maxM; m++) {   // anillos cada 1 m
+    g.beginPath(); g.arc(cx, cy, m * k, 0, 2 * Math.PI); g.strokeStyle = "#d6e6ef"; g.lineWidth = 1; g.stroke();
+    g.fillStyle = "#8aa0ad"; g.fillText(`${m} m`, cx + 3, cy - m * k + 12);
+  }
+  const a = autoSt || {};
+  const rr = (a.robot_radius || 0.25) * k;
+  // zona de parada
+  g.beginPath(); g.arc(cx, cy, rr + (a.stop_dist || 0.25) * k, 0, 2 * Math.PI); g.fillStyle = "rgba(229,51,42,.07)"; g.fill();
+  // puntos del lidar
+  const scan = a.scan || [];
+  const n = scan.length;
+  for (let i = 0; i < n; i++) {
+    const d = scan[i]; if (d == null) continue;
+    const th = -Math.PI + (i + 0.5) * 2 * Math.PI / n;   // marco del robot: 0 = adelante, + = izquierda
+    const dd = Math.min(d, maxM);
+    const x = cx - Math.sin(th) * dd * k, y = cy - Math.cos(th) * dd * k;
+    const close = d - (a.robot_radius || 0.25) < (a.stop_dist || 0.25) * 2;
+    g.beginPath(); g.arc(x, y, d > maxM ? 2 : 3.5, 0, 2 * Math.PI);
+    g.fillStyle = close ? "#e5332a" : (d > maxM ? "#c3d2db" : "#0a0a0a"); g.fill();
+  }
+  // rumbo elegido
+  if (a.running && a.state !== "INTERACTUANDO") {
+    const h = a.heading || 0, L = Math.min(Math.max(a.free || 0.5, 0.4), maxM) * k;
+    g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx - Math.sin(h) * L, cy - Math.cos(h) * L);
+    g.strokeStyle = "#33b9ea"; g.lineWidth = 4; g.lineCap = "round"; g.stroke();
+  }
+  // robot
+  g.beginPath(); g.arc(cx, cy, rr, 0, 2 * Math.PI); g.fillStyle = "#33b9ea"; g.fill();
+  g.beginPath(); g.moveTo(cx, cy - rr - 7); g.lineTo(cx - 7, cy - rr + 4); g.lineTo(cx + 7, cy - rr + 4); g.closePath();
+  g.fillStyle = "#0a0a0a"; g.fill();
+  if (!n) { g.fillStyle = "#8aa0ad"; g.textAlign = "center"; g.fillText("sin datos del lidar", cx, cy + rr + 22); }
+}
+addEventListener("resize", drawLidar);
 
 let toastT = null;
 function toast(txt) { const t = $("toast"); t.textContent = txt; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 1200); }
