@@ -15,7 +15,7 @@ import random
 import pygame
 from pygame import gfxdraw
 
-W, H = 960, 540            # resolución interna; SDL la escala a la pantalla (pygame.SCALED)
+W, H = 960, 540            # en ventana; en pantalla completa se usa la resolución nativa
 BG = (6, 8, 14)
 FPS = 30                   # suficiente para una animación suave; 60 duplica el uso de CPU            # "visor" casi negro
 
@@ -225,9 +225,16 @@ class Face:
 
 
 def open_window(fullscreen):
+    """Pantalla completa: dibuja directamente a la resolución nativa (sin escalar = menos CPU).
+    En ventana: 960x540 escalado."""
+    global W, H
     pygame.init()
-    flags = pygame.SCALED | (pygame.FULLSCREEN if fullscreen else pygame.RESIZABLE)
-    screen = pygame.display.set_mode((W, H), flags, vsync=1)
+    if fullscreen:
+        info = pygame.display.Info()
+        W, H = info.current_w, info.current_h
+        screen = pygame.display.set_mode((W, H), pygame.FULLSCREEN)
+    else:
+        screen = pygame.display.set_mode((W, H), pygame.SCALED | pygame.RESIZABLE, vsync=1)
     pygame.display.set_caption("Jonas")
     pygame.mouse.set_visible(not fullscreen)
     return screen
