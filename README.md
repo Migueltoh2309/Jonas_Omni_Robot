@@ -335,8 +335,9 @@ Más detalles del firmware (PI, modelo del motor, sintonía): [`firmware/jonas_f
 - [x] Brazos Dynamixel MX-28AT: IDs, Protocolo 2.0, prueba de movimiento (`arms/scripts/test_brazos.py`)
 - [ ] Nodo de control de los brazos en Python (`jonas_arms`)
 - [x] Cara en el HDMI (`ros2_ws/src/jonas_face`): ojos con 8 expresiones, `/jonas/face/expression` y `/jonas/face/look`
-- [ ] Optimizar la cara para la pantalla oficial (resolución y consumo)
-- [ ] Nodo **separado** de seguimiento de caras con la cámara (`jonas_vision`): detecta caras y publica `/jonas/face/look`; la cara solo consume mensajes
+- [x] Cara a resolución nativa de la pantalla oficial (800x480): ~15 % de un núcleo; visión: ~25 %
+- [x] Nodo **separado** de seguimiento de caras (`jonas_vision`, YuNet): publica `/jonas/face/look` y `/jonas/vision/faces`. Lanzar todo: `ros2 launch jonas_vision face_tracking.launch.py`
+- [ ] Arranque automático de la cara y la visión (systemd / autostart de MATE)
 - [ ] Manos: 2x XC330-M181-T (5 V)
 - [ ] IMU, cámara, lidar
 - [ ] Navigation 2
