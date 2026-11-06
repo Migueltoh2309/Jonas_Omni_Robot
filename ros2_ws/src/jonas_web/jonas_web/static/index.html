@@ -3,15 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#06080e">
+<meta name="theme-color" content="#ffffff">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Jonas</title>
 <style>
+  /* Paleta UTEC: blanco, celeste y negro */
   :root {
-    --bg: #06080e; --panel: #0e1422; --panel2: #151d30; --line: #22304d;
-    --text: #dbe7ff; --muted: #7d8db0; --accent: #2e96ff; --accent2: #5ab8ff;
-    --ok: #3ddc84; --warn: #ffb020; --bad: #ff4d3d;
+    --bg: #ffffff; --panel: #f5f9fc; --panel2: #e8f5fc; --line: #d6e6ef;
+    --text: #0a0a0a; --muted: #5f6f7a; --black: #0a0a0a;
+    --cel: #33b9ea; --cel-dark: #1690c4; --cel-soft: rgba(51,185,234,.14);
+    --ok: #22b573; --bad: #e5332a;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
@@ -19,105 +21,115 @@
     user-select: none; -webkit-user-select: none; touch-action: none; }
   button { font: inherit; color: inherit; border: 0; cursor: pointer; }
 
-  .app { height: 100dvh; display: grid; padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
-         max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); gap: 8px;
-         grid-template-rows: auto 1fr; }
+  .app { height: 100dvh; display: grid; grid-template-rows: auto 1fr; gap: 8px;
+         padding: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+                  max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
 
-  /* barra superior */
-  .top { display: flex; align-items: center; gap: 8px; }
-  .modes { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
-  .modes button { background: none; padding: 7px 12px; border-radius: 9px; color: var(--muted); font-weight: 600; }
-  .modes button.on { background: var(--accent); color: #fff; }
+  /* ---------- barra superior ---------- */
+  .top { display: flex; align-items: center; gap: 10px; padding-bottom: 6px; border-bottom: 2px solid var(--cel); }
+  .brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .brand img { height: 30px; width: auto; display: block; }
+  .brand .name { font-weight: 800; font-size: 17px; letter-spacing: .3px; padding-left: 8px; border-left: 2px solid var(--line); }
+  .modes { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+  .modes button { background: none; padding: 6px 12px; border-radius: 8px; color: var(--muted); font-weight: 600; }
+  .modes button.on { background: var(--black); color: #fff; }
   .modes button:disabled { opacity: .45; }
   .modes small { font-weight: 400; font-size: 11px; }
-  .emo-btn { display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line);
-             border-radius: 12px; padding: 7px 12px; min-width: 0; }
-  .emo-btn .e { font-size: 20px; line-height: 1; }
-  .emo-btn .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .emo-btn .c { color: var(--muted); font-size: 12px; }
+  .emo-btn { display: flex; align-items: center; gap: 6px; background: var(--panel2); border: 1px solid var(--cel);
+             border-radius: 10px; padding: 6px 10px; min-width: 0; font-weight: 600; }
+  .emo-btn .e { font-size: 19px; line-height: 1; }
+  .emo-btn .c { color: var(--cel-dark); font-size: 12px; }
   .spacer { flex: 1; }
   .conn { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; white-space: nowrap; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); box-shadow: 0 0 8px var(--bad); }
-  .dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
-  .stop { background: var(--bad); color: #fff; font-weight: 800; letter-spacing: .5px; padding: 9px 16px;
-          border-radius: 12px; box-shadow: 0 0 14px rgba(255,77,61,.45); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
+  .dot.ok { background: var(--ok); }
+  .stop { background: var(--bad); color: #fff; font-weight: 800; letter-spacing: .5px; padding: 8px 16px; border-radius: 10px;
+          box-shadow: 0 2px 8px rgba(229,51,42,.35); }
   .stop:active { transform: scale(.96); }
 
-  /* zona principal: joystick | centro | giro */
-  .main { display: grid; grid-template-columns: 1fr minmax(190px, 230px) 1fr; gap: 10px; min-height: 0; }
-  .pad { position: relative; background: radial-gradient(circle at 50% 50%, var(--panel2), var(--panel) 70%);
-         border: 1px solid var(--line); border-radius: 18px; display: grid; place-items: center; min-height: 0;
-         overflow: hidden; }
-  .pad .label { position: absolute; top: 8px; left: 0; right: 0; text-align: center; color: var(--muted); font-size: 12px; }
-  .ring { position: relative; border-radius: 50%; border: 2px solid var(--line);
-          background: radial-gradient(circle, rgba(46,150,255,.10), transparent 70%); }
+  /* ---------- zona principal (horizontal): joystick | panel derecho ---------- */
+  .main { display: grid; grid-template-columns: auto 1fr; gap: 10px; min-height: 0; }
+  .side { display: grid; grid-template-rows: minmax(90px, 1fr) auto auto auto; gap: 8px; min-height: 0; min-width: 0; }
+
+  .pad { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+         display: grid; place-items: center; min-height: 0; min-width: 0; overflow: hidden; }
+  #padMove { aspect-ratio: 1; height: 100%; }
+  .pad .label { position: absolute; top: 6px; left: 10px; color: var(--muted); font-size: 12px; font-weight: 600;
+                text-transform: uppercase; letter-spacing: .6px; }
+  .ring { position: relative; border-radius: 50%; border: 2px solid var(--line); background: #fff; }
   .ring.h { border-radius: 999px; }
   .ring::before, .ring::after { content: ""; position: absolute; background: var(--line); }
-  .ring::before { left: 50%; top: 10%; bottom: 10%; width: 1px; }
-  .ring::after { top: 50%; left: 10%; right: 10%; height: 1px; }
+  .ring::before { left: 50%; top: 12%; bottom: 12%; width: 1px; }
+  .ring::after { top: 50%; left: 8%; right: 8%; height: 1px; }
   .ring.h::before { display: none; }
-  .knob { position: absolute; left: 50%; top: 50%; width: 38%; aspect-ratio: 1; border-radius: 50%;
-          transform: translate(-50%, -50%); background: radial-gradient(circle at 35% 35%, var(--accent2), var(--accent) 60%, #155fb0);
-          box-shadow: 0 0 18px rgba(46,150,255,.55); transition: transform .12s ease-out; }
-  .ring.h .knob { height: 76%; width: auto; }
+  .knob { position: absolute; left: 50%; top: 50%; width: 36%; aspect-ratio: 1; border-radius: 50%;
+          transform: translate(-50%, -50%); background: radial-gradient(circle at 35% 30%, #7fd6f5, var(--cel) 55%, var(--cel-dark));
+          box-shadow: 0 4px 12px rgba(22,144,196,.35); transition: transform .12s ease-out; }
+  .ring.h .knob { height: 80%; width: auto; }
   .pad.active .knob { transition: none; }
-  .pad.active .ring { border-color: var(--accent); }
-  .arrows { position: absolute; inset: 0; pointer-events: none; color: var(--muted); font-size: 18px; }
-  .arrows span { position: absolute; }
+  .pad.active .ring { border-color: var(--cel); background: var(--cel-soft); }
+  .hint { position: absolute; color: #b9c9d3; font-size: 13px; font-weight: 700; }
 
-  .center { display: flex; flex-direction: column; justify-content: center; gap: 8px; min-height: 0; min-width: 0; overflow-x: hidden; overflow-y: auto; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px; min-width: 0; }
   .card h3 { margin: 0 0 6px; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .6px; }
   .speed { display: flex; align-items: center; gap: 10px; }
-  .speed input { flex: 1; min-width: 0; accent-color: var(--accent); height: 28px; }
-  .speed b { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
-  .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
-  .actions button { min-width: 0; white-space: nowrap; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 6px;
-                    display: flex; align-items: center; justify-content: center; gap: 6px; }
-  .actions button:active, .actions button.flash { background: var(--accent); border-color: var(--accent); }
-  .tele { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; font-variant-numeric: tabular-nums; font-size: 13px; }
-  .tele div { color: var(--muted); } .tele b { color: var(--text); font-weight: 600; }
-  .status { color: var(--muted); font-size: 11px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .speed h3 { margin: 0; }
+  .speed input { flex: 1; min-width: 0; accent-color: var(--cel); height: 26px; }
+  .speed b { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .actions button { min-width: 0; white-space: nowrap; background: #fff; border: 1px solid var(--line); border-radius: 10px;
+                    padding: 8px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 13px; }
+  .actions button .i { font-size: 20px; line-height: 1; }
+  .actions button:active, .actions button.flash { background: var(--cel); border-color: var(--cel); color: #fff; }
+  .tele { display: flex; gap: 14px; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted);
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px; }
+  .tele b { color: var(--text); font-weight: 600; }
 
-  /* lista de emociones */
-  .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: flex-start;
-           justify-content: center; padding-top: 52px; z-index: 10; }
+  /* ---------- lista de emociones ---------- */
+  .sheet { position: fixed; inset: 0; background: rgba(10,10,10,.35); display: none; align-items: flex-start;
+           justify-content: center; padding-top: 50px; z-index: 10; }
   .sheet.open { display: flex; }
-  .sheet .list { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; width: min(320px, 92vw);
-                 max-height: calc(100dvh - 70px); overflow: auto; padding: 6px; touch-action: pan-y; }
-  .sheet .list button { width: 100%; display: flex; align-items: center; gap: 10px; background: none; padding: 10px;
+  .sheet .list { background: #fff; border: 1px solid var(--line); border-radius: 14px; width: min(320px, 92vw);
+                 max-height: calc(100dvh - 66px); overflow: auto; padding: 6px; touch-action: pan-y;
+                 box-shadow: 0 10px 30px rgba(0,0,0,.18); }
+  .sheet .list button { width: 100%; display: flex; align-items: center; gap: 10px; background: none; padding: 9px 10px;
                         border-radius: 10px; text-align: left; }
   .sheet .list button .e { font-size: 22px; width: 28px; text-align: center; }
-  .sheet .list button.on { background: var(--panel2); outline: 1px solid var(--accent); }
+  .sheet .list button.on { background: var(--panel2); outline: 1px solid var(--cel); font-weight: 600; }
 
-  .toast { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: var(--panel2);
-           border: 1px solid var(--line); padding: 8px 14px; border-radius: 10px; opacity: 0; transition: opacity .2s;
-           pointer-events: none; font-size: 13px; z-index: 20; }
-  .toast.show { opacity: 1; }
-  .offline { position: fixed; inset: 0; display: none; place-items: center; background: rgba(6,8,14,.8); z-index: 30;
-             text-align: center; color: var(--muted); }
+  .toast { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: var(--black); color: #fff;
+           padding: 8px 14px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; font-size: 13px; z-index: 20; }
+  .toast.show { opacity: .92; }
+  .offline { position: fixed; inset: 0; display: none; place-items: center; background: rgba(255,255,255,.85); z-index: 30;
+             text-align: center; color: var(--muted); font-weight: 600; }
   .offline.show { display: grid; }
 
-  /* celular vertical: joysticks abajo, uno al lado del otro */
+  /* ---------- celular vertical: info arriba, joysticks abajo ---------- */
   @media (orientation: portrait) {
-    .top { flex-wrap: wrap; }
-    .conn { order: 5; }
-    .main { grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr; }
-    .center { grid-column: 1 / -1; grid-row: 1; }
-    #padMove, #padTurn { grid-row: 2; }
+    .top { flex-wrap: wrap; row-gap: 8px; }
+    .brand { width: 100%; justify-content: center; }
+    .brand img { height: 34px; }
+    .main { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+    #padMove { display: none; }
+    .side { grid-template-rows: auto auto auto 1fr; }
+    .side > .pad#padTurn { display: none; }
+    .sticks { display: grid !important; grid-template-columns: 1fr 1fr; gap: 10px; min-height: 0; }
+    .sticks .pad { aspect-ratio: auto; height: auto; }
   }
-  @media (max-height: 380px) { .card { padding: 6px 8px; } .actions button { padding: 7px 4px; } }
+  .sticks { display: none; }
+  @media (max-height: 360px) { .brand .name { display: none; } .actions button { padding: 5px 2px; } }
 </style>
 </head>
 <body>
 <div class="app">
   <div class="top">
+    <div class="brand"><img src="/static/utec.png" alt="UTEC"><span class="name">JONAS</span></div>
     <div class="modes" role="tablist">
       <button id="mManual" class="on">Manual</button>
       <button id="mAuto" disabled>Auto <small>(pronto)</small></button>
     </div>
     <button class="emo-btn" id="emoBtn" aria-haspopup="listbox">
-      <span class="e" id="emoIcon">😐</span><span class="n" id="emoName">neutral</span><span class="c">▾</span>
+      <span class="e" id="emoIcon">😐</span><span id="emoName">neutral</span><span class="c">▾</span>
     </button>
     <div class="spacer"></div>
     <div class="conn"><span class="dot" id="dot"></span><span id="connTxt">conectando…</span></div>
@@ -125,31 +137,22 @@
   </div>
 
   <div class="main">
-    <div class="pad" id="padMove">
-      <div class="label">mover</div>
-      <div class="ring" id="ringMove"><div class="knob" id="knobMove"></div></div>
-    </div>
+    <!-- horizontal: joystick grande a la izquierda -->
+    <div class="pad" id="padMove"><div class="label">mover</div><div class="ring" data-stick="move"><div class="knob"></div></div></div>
 
-    <div class="center">
-      <div class="card">
-        <h3>Velocidad</h3>
-        <div class="speed"><input type="range" id="speed" min="10" max="100" step="5" value="50"><b id="speedTxt"></b></div>
+    <div class="side">
+      <div class="pad" id="padTurn"><div class="label">girar</div>
+        <span class="hint" style="left:14px">⟲</span><span class="hint" style="right:14px">⟳</span>
+        <div class="ring h" data-stick="turn"><div class="knob"></div></div></div>
+      <div class="card speed"><h3>Velocidad</h3><input type="range" id="speed" min="10" max="100" step="5" value="50"><b id="speedTxt"></b></div>
+      <div class="card"><h3>Acciones de los brazos</h3><div class="actions" id="actions"></div></div>
+      <div class="tele"><span>vx <b id="tvx">0.00</b></span><span>vy <b id="tvy">0.00</b></span><span>giro <b id="twz">0.00</b></span>
+        <span id="status">👀 0</span></div>
+      <!-- vertical: los dos joysticks abajo -->
+      <div class="sticks">
+        <div class="pad" id="padMoveP"><div class="label">mover</div><div class="ring" data-stick="move"><div class="knob"></div></div></div>
+        <div class="pad" id="padTurnP"><div class="label">girar</div><div class="ring h" data-stick="turn"><div class="knob"></div></div></div>
       </div>
-      <div class="card">
-        <h3>Acciones de los brazos</h3>
-        <div class="actions" id="actions"></div>
-      </div>
-      <div class="card">
-        <div class="tele">
-          <div>vx <b id="tvx">0.00</b></div><div>vy <b id="tvy">0.00</b></div><div>giro <b id="twz">0.00</b></div>
-        </div>
-        <div class="status" id="status">👀 caras: 0</div>
-      </div>
-    </div>
-
-    <div class="pad" id="padTurn">
-      <div class="label">girar</div>
-      <div class="ring h" id="ringTurn"><div class="knob" id="knobTurn"></div></div>
     </div>
   </div>
 </div>
@@ -164,8 +167,8 @@ const EMOJI = { neutral: "😐", feliz: "😊", triste: "😢", enojado: "😠",
 const ACTION_ICON = { saludar: "👋", reposo: "💤", aplaudir: "👏", abrazar: "🤗" };
 const $ = (id) => document.getElementById(id);
 
-let ws = null, connected = false, maxLin = 0.3, maxAng = 1.5;
-let move = { x: 0, y: 0, active: false }, turn = { x: 0, active: false };
+let ws = null, maxLin = 0.3, maxAng = 1.5;
+const move = { x: 0, y: 0, n: 0 }, turn = { x: 0, y: 0, n: 0 };   // n = dedos activos en ese control
 let wasMoving = false;
 
 // ---------- conexión ----------
@@ -181,21 +184,19 @@ function connect() {
   };
 }
 function setConn(ok) {
-  connected = ok;
   $("dot").classList.toggle("ok", ok);
   $("connTxt").textContent = ok ? "conectado" : "sin conexión";
   $("offline").classList.toggle("show", !ok);
 }
 function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
-// ---------- estado ----------
 function showState(m) {
   $("emoIcon").textContent = EMOJI[m.emotion] || "🙂";
   $("emoName").textContent = m.emotion;
   document.querySelectorAll("#emoList button").forEach(b => b.classList.toggle("on", b.dataset.name === m.emotion));
   $("tvx").textContent = m.cmd[0].toFixed(2); $("tvy").textContent = m.cmd[1].toFixed(2); $("twz").textContent = m.cmd[2].toFixed(2);
-  let s = `👀 caras: ${m.faces}`;
-  if (m.clients > 1) s += ` · 📱 ${m.clients} conectados`;
+  let s = `👀 ${m.faces}`;
+  if (m.clients > 1) s += ` · 📱 ${m.clients}`;
   if (m.status) s += ` · ${m.status}`;
   $("status").textContent = s;
 }
@@ -220,7 +221,7 @@ function buildActions(list) {
   const box = $("actions"); box.innerHTML = "";
   list.forEach(name => {
     const b = document.createElement("button");
-    b.innerHTML = `<span>${ACTION_ICON[name] || "🤖"}</span><span>${name}</span>`;
+    b.innerHTML = `<span class="i">${ACTION_ICON[name] || "🤖"}</span><span>${name}</span>`;
     b.onclick = () => { send({ t: "action", name }); b.classList.add("flash"); setTimeout(() => b.classList.remove("flash"), 250); toast(`acción: ${name}`); };
     box.appendChild(b);
   });
@@ -231,8 +232,9 @@ function speed() { return $("speed").value / 100; }
 function updSpeed() { $("speedTxt").textContent = `${(maxLin * speed()).toFixed(2)} m/s`; }
 $("speed").oninput = updSpeed;
 
-// ---------- joysticks (multitáctil: uno con cada pulgar) ----------
-function joystick(pad, ring, knob, horizontalOnly, state) {
+// ---------- joysticks (multitáctil; hay una copia para horizontal y otra para vertical) ----------
+function joystick(ring, state, horizontalOnly) {
+  const pad = ring.parentElement, knob = ring.querySelector(".knob");
   let id = null;
   const update = (ev) => {
     const r = ring.getBoundingClientRect();
@@ -246,31 +248,31 @@ function joystick(pad, ring, knob, horizontalOnly, state) {
   };
   pad.addEventListener("pointerdown", (ev) => {
     if (id !== null) return;
-    id = ev.pointerId; pad.setPointerCapture(id); pad.classList.add("active"); state.active = true; update(ev);
+    id = ev.pointerId; pad.setPointerCapture(id); pad.classList.add("active"); state.n++; update(ev);
   });
   pad.addEventListener("pointermove", (ev) => { if (ev.pointerId === id) update(ev); });
   const end = (ev) => {
     if (ev.pointerId !== id) return;
-    id = null; state.active = false; state.x = 0; state.y = 0; pad.classList.remove("active");
+    id = null; state.n = Math.max(0, state.n - 1); state.x = 0; state.y = 0; pad.classList.remove("active");
     knob.style.transform = "translate(-50%, -50%)";
   };
   pad.addEventListener("pointerup", end); pad.addEventListener("pointercancel", end); pad.addEventListener("lostpointercapture", end);
 }
-joystick($("padMove"), $("ringMove"), $("knobMove"), false, move);
-joystick($("padTurn"), $("ringTurn"), $("knobTurn"), true, turn);
+document.querySelectorAll(".ring").forEach(r => joystick(r, r.dataset.stick === "move" ? move : turn, r.classList.contains("h")));
 
-function sizeRings() {   // el círculo del joystick ocupa lo que permita su panel
-  for (const [pad, ring, h] of [[$("padMove"), $("ringMove"), false], [$("padTurn"), $("ringTurn"), true]]) {
-    const s = Math.min(pad.clientWidth, pad.clientHeight - 24) * 0.86;
-    ring.style.width = s + "px"; ring.style.height = (h ? s * 0.34 : s) + "px";
-  }
+function sizeRings() {   // cada joystick ocupa lo que permita su panel
+  document.querySelectorAll(".ring").forEach(ring => {
+    const pad = ring.parentElement;
+    const w = pad.clientWidth - 20, h = pad.clientHeight - 30;
+    if (ring.classList.contains("h")) { const s = Math.min(w * 0.82, 420); ring.style.width = s + "px"; ring.style.height = Math.min(s * 0.3, h) + "px"; }
+    else { const s = Math.max(60, Math.min(w, h)); ring.style.width = s + "px"; ring.style.height = s + "px"; }
+  });
 }
-addEventListener("resize", sizeRings); sizeRings();
+addEventListener("resize", sizeRings); new ResizeObserver(sizeRings).observe(document.body); sizeRings();
 
 // 20 Hz mientras se usa algún joystick; al soltar, un "stop"
 setInterval(() => {
-  const active = move.active || turn.active;
-  if (active) {
+  if (move.n || turn.n) {
     // pantalla: arriba = adelante (+x), izquierda = +y; girar a la izquierda = antihorario (+z)
     send({ t: "cmd", vx: -move.y, vy: -move.x, wz: -turn.x, speed: speed() });
     wasMoving = true;
