@@ -31,9 +31,9 @@ EXPRESSIONS = {
     "triste":      dict(open=0.76, angle=-24, lower=0.00, scale=0.94, pupil=1.12, color=(55, 105, 225), gaze=(0, -0.55)),
     "enojado":     dict(open=0.70, angle=26,  lower=0.18, scale=0.98, pupil=0.85, color=(255, 70, 45)),
     "preocupado":  dict(open=0.95, angle=-16, lower=0.08, scale=1.04, pupil=0.78, color=(80, 160, 255), jitter=1),
-    "mareado":     dict(open=0.92, angle=0,   lower=0.00, scale=1.00, pupil=1.00, color=(150, 115, 255), dizzy=1),
+    "mareado":     dict(open=1.00, angle=0,   lower=0.00, scale=1.00, pupil=1.00, color=(150, 115, 255), dizzy=1),
     "aburrido":    dict(open=0.62, angle=0,   lower=0.12, scale=0.98, pupil=1.00, color=(45, 120, 215), gaze=(0.65, -0.1)),
-    "sorprendido": dict(open=1.00, angle=-4,  lower=0.00, scale=1.16, pupil=0.62, color=(90, 200, 255)),
+    "sorprendido": dict(open=1.00, angle=-4,  lower=0.00, scale=1.08, pupil=0.62, color=(90, 200, 255)),
 }
 ALIASES = {"happy": "feliz", "sad": "triste", "angry": "enojado", "worried": "preocupado",
            "dizzy": "mareado", "bored": "aburrido", "surprised": "sorprendido"}
@@ -133,19 +133,22 @@ class Face:
         surf.fill(BG)
         p = self.p
         breathe = 1 + 0.012 * math.sin(self.t * 1.6)
-        R = H * 0.26 * p["scale"] * breathe
+        R = H * 0.325 * p["scale"] * breathe
         bob = p["bounce"] * abs(math.sin(self.t * 4.5)) * -H * 0.025
         jx = p["jitter"] * math.sin(self.t * 53) * R * 0.025
         jy = p["jitter"] * math.cos(self.t * 47) * R * 0.02
         gx, gy = self.gaze
         for side in (-1, 1):                    # -1: ojo izquierdo (en pantalla), +1: derecho
-            cx = W / 2 + side * W * 0.23 + gx * W * 0.045 + jx
+            cx = W / 2 + side * W * 0.235 + gx * W * 0.045 + jx
             cy = H / 2 - gy * H * 0.05 + bob + jy
             if p["dizzy"] > 0.01:               # mareado: cada ojo da vueltas en sentido contrario
                 a = self.t * 3.0 * side
                 cx += math.cos(a) * R * 0.10 * p["dizzy"]
                 cy += math.sin(a) * R * 0.10 * p["dizzy"]
+            # cada ojo se dibuja solo en su mitad de la pantalla: así los párpados de uno no tapan al otro
+            surf.set_clip(pygame.Rect(0 if side < 0 else W // 2, 0, W // 2 + 1, H))
             self._eye(surf, cx, cy, R, side)
+        surf.set_clip(None)
 
     def _eye(self, surf, cx, cy, R, side):
         p = self.p
