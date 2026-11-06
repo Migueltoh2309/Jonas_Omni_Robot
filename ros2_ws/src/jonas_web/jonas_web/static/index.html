@@ -39,6 +39,9 @@
              border-radius: 10px; padding: 6px 10px; min-width: 0; font-weight: 600; }
   .emo-btn .e { font-size: 19px; line-height: 1; }
   .emo-btn .c { color: var(--cel-dark); font-size: 12px; }
+  .emo-btn:disabled { background: var(--panel); border-color: var(--line); cursor: default; }
+  .emo-btn:disabled .c::before { content: "auto"; } .emo-btn:disabled .c { font-size: 0; }
+  .emo-btn:disabled .c::before { font-size: 11px; color: var(--muted); font-weight: 600; }
   .spacer { flex: 1; }
   .conn { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; white-space: nowrap; }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
@@ -348,6 +351,8 @@ function setMode(m) {
   mode = m;
   document.querySelector(".app").classList.toggle("auto", m === "auto");
   $("mManual").classList.toggle("on", m === "manual"); $("mAuto").classList.toggle("on", m === "auto");
+  $("emoBtn").disabled = m === "auto";          // en modo auto las emociones las decide el robot
+  if (m === "auto") closeSheet();
   if (m === "auto") requestAnimationFrame(drawLidar); else sizeRings();
 }
 $("mManual").onclick = () => send({ t: "mode", name: "manual" });

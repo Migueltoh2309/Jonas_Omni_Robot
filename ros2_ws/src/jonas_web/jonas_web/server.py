@@ -185,7 +185,7 @@ class Robot:
             self.cmd_t = time.monotonic()
         elif t == "stop":
             self.stop()
-        elif t == "emotion" and msg.get("name") in EMOTIONS:
+        elif t == "emotion" and msg.get("name") in EMOTIONS and self.mode == "manual":   # en auto las decide el robot
             self.emotion = msg["name"]
             self.b.publish("/jonas/face/expression", self.emotion)
         elif t == "action" and msg.get("name") in ACTIONS:
