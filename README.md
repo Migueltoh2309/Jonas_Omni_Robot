@@ -332,7 +332,12 @@ Más detalles del firmware (PI, modelo del motor, sintonía): [`firmware/jonas_f
 - [ ] Re-sintonizar el PI con carga (robot en el piso)
 - [ ] URDF y launch file
 - [ ] Arranque automático con systemd
-- [ ] Brazos Dynamixel MX-28AT: IDs, Protocolo 2.0, nodo de control en Python
+- [x] Brazos Dynamixel MX-28AT: IDs, Protocolo 2.0, prueba de movimiento (`arms/scripts/test_brazos.py`)
+- [ ] Nodo de control de los brazos en Python (`jonas_arms`)
+- [x] Cara en el HDMI (`ros2_ws/src/jonas_face`): ojos con 8 expresiones, `/jonas/face/expression` y `/jonas/face/look`
+- [ ] Optimizar la cara para la pantalla oficial (resolución y consumo)
+- [ ] Nodo **separado** de seguimiento de caras con la cámara (`jonas_vision`): detecta caras y publica `/jonas/face/look`; la cara solo consume mensajes
+- [ ] Manos: 2x XC330-M181-T (5 V)
 - [ ] IMU, cámara, lidar
 - [ ] Navigation 2
 
